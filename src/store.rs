@@ -97,6 +97,12 @@ impl Store {
     /// blunt: only an instance that imports WASI captures the pointer, but the
     /// store cannot see an instance's imports, so it refuses after any
     /// instantiation. Use a fresh store for a different WASI configuration.
+    ///
+    /// `config` is consumed either way — on the refusal path it is dropped and
+    /// its C object freed, rather than handed back in the error. Reaching the
+    /// refusal means the calls are in the wrong order, which is fixed by
+    /// restructuring rather than by retrying with the same config, and building
+    /// another one is cheap.
     pub fn set_wasi(&mut self, config: WasiConfig) -> Result<(), Error> {
         if !self.instances.is_empty() {
             return Err(Error::Message("cannot change the WASI host after instantiating: an existing instance holds a pointer to it".to_string()));
@@ -144,6 +150,15 @@ impl Drop for Store {
     /// This is also the only place anything is freed: nothing hands back an
     /// individual object, so a handle can never name something already gone
     /// while its store is alive. `Copy` handles are sound because of that.
+    ///
+    /// Deleting each object here and then the store assumes the C store does
+    /// not own them too, or every one would be freed twice. It does not: a
+    /// zwasm `Store` tracks its engine, its WASI host, its live instances and
+    /// their parked runtimes, and nothing else — funcs, memories, globals,
+    /// tables and modules are the caller's to release. Instances are the one
+    /// overlap, and `wasm_instance_delete` unregisters each from the store's
+    /// live list, so the cascade in `wasm_store_delete` does not reach them a
+    /// second time.
     fn drop(&mut self) {
         unsafe {
             for &f in self.funcs.iter() {

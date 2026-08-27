@@ -162,3 +162,26 @@ fn changing_the_wasi_host_after_instantiating_is_refused() {
     let err = store.unset_wasi().err().unwrap();
     assert!(err.to_string().contains("after instantiating"));
 }
+
+// The refusal consumes the config rather than handing it back in the error.
+// Pinned because it is a deliberate choice, not an oversight: reaching the
+// refusal means the calls are ordered wrongly, and a fresh store needs a fresh
+// config anyway. Freeing exactly once on this path is what the test proves —
+// a leak or a double free here would show up under a sanitizer.
+#[test]
+fn a_refused_wasi_config_is_released() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+
+    let module = Module::new(&mut store, WASI_IMPORT_WASM).unwrap();
+    let mut wasi = WasiConfig::new().unwrap();
+    wasi.set_args(&["prog"]).unwrap();
+    store.set_wasi(wasi).unwrap();
+    let _instance = Instance::new(&mut store, &module, &[]).unwrap();
+
+    for _ in 0..8 {
+        let mut rejected = WasiConfig::new().unwrap();
+        rejected.set_args(&["never installed"]).unwrap();
+        assert!(store.set_wasi(rejected).is_err());
+    }
+}
