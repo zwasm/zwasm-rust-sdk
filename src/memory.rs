@@ -19,6 +19,12 @@ impl Memory {
     /// Creates a memory of `min` pages, growable to `max` pages.
     ///
     /// Sizes are in 64 KiB pages. `None` for `max` means no maximum.
+    ///
+    /// `Some(u32::MAX)` is indistinguishable from `None`: the wasm-c-api gives
+    /// `wasm_limits_t` one `u32` for the maximum and reserves `u32::MAX` as its
+    /// "no maximum" sentinel (`wasm_limits_max_default`, `wasm.h`), so the
+    /// value cannot also mean a limit. Nothing is lost — that many 64 KiB pages
+    /// is 256 TiB, and a wasm32 memory tops out at 65536 pages.
     pub fn new(store: &mut Store, min: u32, max: Option<u32>) -> Result<Self, Error> {
         let limits = sys::wasm_limits_t {
             min,
