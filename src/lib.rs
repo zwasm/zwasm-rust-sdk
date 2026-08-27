@@ -3,13 +3,17 @@
 //! Safe Rust bindings for [zwasm](https://github.com/zwasm/zwasm), a WebAssembly
 //! runtime written in Zig.
 //!
-//! The API follows the [wasm-c-api](https://github.com/WebAssembly/wasm-c-api)
-//! object model that zwasm 2.x exposes, so the types here map one to one onto the
-//! C surface:
+//! The types map onto the [wasm-c-api](https://github.com/WebAssembly/wasm-c-api)
+//! object model that zwasm 2.x exposes, and the ownership model follows
+//! [wasmtime](https://docs.rs/wasmtime): the [`Store`](store::Store) owns every
+//! object created through it, and the other types are `Copy` handles naming an
+//! object inside a store. Using a handle means passing the store back in, so the
+//! borrow checker keeps every use inside the store's lifetime, and a handle used
+//! with the wrong store panics.
 //!
 //! | Type | C type | Role |
 //! |------|--------|------|
-//! | [`Engine`](engine::Engine) | `wasm_engine_t` | Compilation environment; `Send + Sync` |
+//! | [`Engine`](engine::Engine) | `wasm_engine_t` | Compilation environment; `Clone + Send + Sync` |
 //! | [`Store`](store::Store) | `wasm_store_t` | Owns the runtime state for one thread |
 //! | [`Module`](module::Module) | `wasm_module_t` | A validated module |
 //! | [`Instance`](instance::Instance) | `wasm_instance_t` | An instantiated module |
@@ -18,8 +22,10 @@
 //! | [`Memory`](memory::Memory), [`Global`](global::Global), [`Table`](table::Table) | `wasm_memory_t`, ... | Runtime entities |
 //! | [`WasiConfig`](wasi::WasiConfig) | `zwasm_wasi_config_t` | WASI 0.1 host setup |
 //!
-//! Every handle frees its C counterpart on drop, so there is nothing to release by
-//! hand.
+//! The store frees everything on drop — children before parents, then the C store,
+//! then its reference to the engine. zwasm resolves every deallocation through
+//! store and engine back-pointers, so that order is what makes the drop safe, and
+//! there is nothing to release by hand.
 //!
 //! ## Example
 //!
@@ -40,12 +46,14 @@
 //! ];
 //!
 //! let engine = Engine::new()?;
-//! let store = Store::new(&engine)?;
-//! let module = Module::new(&store, wasm)?;
-//! let instance = Instance::new(&store, &module, &[])?;
+//! let mut store = Store::new(&engine)?;
+//! let module = Module::new(&mut store, wasm)?;
+//! let instance = Instance::new(&mut store, &module, &[])?;
 //!
-//! let add = instance.get_func_by_name(&module, "add")?;
-//! assert_eq!(add.call(&[Val::I32(10), Val::I32(32)])?, vec![Val::I32(42)]);
+//! let add = instance.get_func(&mut store, "add").ok_or("no export named add")?;
+//! let mut results = [Val::I32(0)];
+//! add.call(&mut store, &[Val::I32(10), Val::I32(32)], &mut results)?;
+//! assert_eq!(results, [Val::I32(42)]);
 //! # Ok(())
 //! # }
 //! ```
@@ -70,7 +78,7 @@
 //! wasi.preopen_dir("/host/dir", "/")?;
 //! wasi.inherit_stdio();
 //!
-//! store.set_wasi(wasi);
+//! store.set_wasi(wasi)?;
 //! # Ok(())
 //! # }
 //! ```

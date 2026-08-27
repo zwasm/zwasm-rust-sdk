@@ -7,16 +7,21 @@ use crate::{
 };
 
 /// A global variable, wrapping `wasm_global_t`.
+///
+/// A handle into a [`Store`]; the store owns the C global and frees it on its own
+/// drop, so the handle is `Copy` and carries no destructor.
+#[derive(Clone, Copy)]
 pub struct Global {
     pub(crate) ptr: *mut sys::wasm_global_t,
+    pub(crate) store_id: u64,
 }
 
 impl Global {
     /// Creates a global holding `initial`.
     ///
     /// The value type is taken from `initial`. `mutable` decides whether
-    /// [`Global::set`] has any effect.
-    pub fn new(store: &Store, initial: Val, mutable: bool) -> Result<Self, Error> {
+    /// [`Global::set`] is allowed.
+    pub fn new(store: &mut Store, initial: Val, mutable: bool) -> Result<Self, Error> {
         let valtype = non_null(
             unsafe { sys::wasm_valtype_new(initial.kind()) },
             "failed to create value type",
@@ -40,11 +45,23 @@ impl Global {
         unsafe { sys::wasm_globaltype_delete(globaltype) };
 
         let ptr = non_null(ptr, "failed to create global")?;
-        Ok(Global { ptr })
+        store.globals.push(ptr);
+
+        Ok(Global {
+            ptr,
+            store_id: store.id,
+        })
     }
 
     /// Reads the current value.
-    pub fn get(&self) -> Val {
+    ///
+    /// This takes a shared borrow where wasmtime's `Global::get` takes an
+    /// exclusive one, which holds while [`Val`] covers only the numeric types:
+    /// the C side just reads the value cell. A reference-typed `Val` would make
+    /// this allocate an owned `wasm_ref_t`, and the borrow would have to
+    /// tighten to match.
+    pub fn get(&self, store: &Store) -> Val {
+        store.check(self.store_id);
         let mut out: sys::wasm_val_t = unsafe { std::mem::zeroed() };
         unsafe { sys::wasm_global_get(self.ptr, &mut out) };
         Val::from(out)
@@ -52,19 +69,31 @@ impl Global {
 
     /// Writes `value`.
     ///
-    /// On an immutable global this is silently ignored, matching the C API, which
-    /// rejects the out of band write without reporting it. There is no error to
-    /// check, so guard on the mutability you created the global with.
-    pub fn set(&mut self, value: Val) {
-        let val: sys::wasm_val_t = value.into();
-        unsafe { sys::wasm_global_set(self.ptr, &val) }
-    }
-}
+    /// Fails on an immutable global and on a value of the wrong type. The C API
+    /// rejects both silently, so the checks are made here against the global's
+    /// own type.
+    pub fn set(&self, store: &mut Store, value: Val) -> Result<(), Error> {
+        store.check(self.store_id);
+        let global_type = unsafe { sys::wasm_global_type(self.ptr) };
+        let mutability = unsafe { sys::wasm_globaltype_mutability(global_type) };
+        let content = unsafe { sys::wasm_globaltype_content(global_type) };
+        let kind = unsafe { sys::wasm_valtype_kind(content) };
+        unsafe { sys::wasm_globaltype_delete(global_type) };
 
-impl Drop for Global {
-    fn drop(&mut self) {
-        unsafe {
-            sys::wasm_global_delete(self.ptr);
+        if mutability != sys::wasm_mutability_enum_WASM_VAR as u8 {
+            return Err(Error::Message(
+                "cannot set the value of an immutable global".to_string(),
+            ));
         }
+
+        if kind != value.kind() {
+            return Err(Error::Message(
+                "value type does not match the global's type".to_string(),
+            ));
+        }
+
+        let val: sys::wasm_val_t = value.into();
+        unsafe { sys::wasm_global_set(self.ptr, &val) };
+        Ok(())
     }
 }
