@@ -90,6 +90,12 @@ impl Func {
     /// running anything for a function with no instance behind it, so it is
     /// refused here rather than returning a silent zero.
     ///
+    /// The refusal is a workaround for that, tracked upstream as
+    /// [zwasm#315](https://github.com/zwasm/zwasm/issues/315). When
+    /// `wasm_func_call` either runs a host function or traps, this check and
+    /// the origin flag it reads both come out. Widening a call that used to
+    /// fail is not a breaking change.
+    ///
     /// # Panics
     ///
     /// Panics when `self` belongs to a different store.

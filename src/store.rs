@@ -103,6 +103,13 @@ impl Store {
     /// refusal means the calls are in the wrong order, which is fixed by
     /// restructuring rather than by retrying with the same config, and building
     /// another one is cheap.
+    ///
+    /// The refusal is a workaround for the C API freeing a host that live
+    /// instances still point at, tracked upstream as
+    /// [zwasm#314](https://github.com/zwasm/zwasm/issues/314). If zwasm defers
+    /// the free until the store is deleted, replacing the host stops being
+    /// unsound and this refusal — along with the permanence it forces — can
+    /// go.
     pub fn set_wasi(&mut self, config: WasiConfig) -> Result<(), Error> {
         if !self.instances.is_empty() {
             return Err(Error::Message("cannot change the WASI host after instantiating: an existing instance holds a pointer to it".to_string()));
