@@ -96,6 +96,14 @@ jobs:
       # extracted package and refuses with "failed to verify package tarball".
       # The step below is the verification instead, and it builds outside the
       # package directory where that write is harmless.
+      #
+      # This flag is a workaround with an exit condition, not a permanent
+      # setting: zwasm#316 asks for the lint tool to become a lazy dependency,
+      # so `zig build static-lib` fetches nothing. When that lands and the
+      # submodule is bumped past it, drop `--no-verify` here and in the release
+      # procedure, and let cargo verify again. The unpack-and-build step below
+      # stays either way — it checks what a consumer downloads, which cargo's
+      # in-place verification does not.
       - name: Package zwasm-sys
         run: cargo package -p zwasm-sys --no-verify
 
