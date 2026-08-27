@@ -74,8 +74,12 @@ impl Func {
     ///
     /// `params` and `results` have to match the function's declared arities; a
     /// wrong length is reported as an error before anything runs. Size `results`
-    /// with [`Func::result_arity`]; its initial values are overwritten. Parameter
-    /// types are not checked here — a mismatch traps.
+    /// with [`Func::result_arity`]. Parameter types are not checked here — a
+    /// mismatch traps.
+    ///
+    /// `results` is written only when this returns `Ok`. On any error it keeps
+    /// whatever it held, which is the caller's own data rather than anything
+    /// from the guest; do not read it after an `Err`.
     ///
     /// A guest trap is returned as [`Error::Trap`] carrying the trap message.
     ///

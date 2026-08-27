@@ -133,6 +133,14 @@ impl Drop for Store {
     /// all, and the store's `Engine` clone outlives even that because fields
     /// drop only after this function returns.
     ///
+    /// Host functions passed to [`Instance::new`](crate::instance::Instance::new)
+    /// as imports sit in the same `funcs` list and so are freed before the
+    /// instances that imported them. That is safe: `wasm_instance_delete` runs
+    /// the host-info finalizer, unregisters the instance and parks its runtime,
+    /// and the parked runtime's later teardown frees only its own storage —
+    /// neither reads the import bindings or the callback payloads those funcs
+    /// own.
+    ///
     /// This is also the only place anything is freed: nothing hands back an
     /// individual object, so a handle can never name something already gone
     /// while its store is alive. `Copy` handles are sound because of that.

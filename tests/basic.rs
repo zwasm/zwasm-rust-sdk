@@ -374,3 +374,20 @@ fn calling_a_host_function_directly_is_an_error() {
     f.call(&mut store, &[Val::I32(41)], &mut results).unwrap();
     assert_eq!(results, [Val::I32(42)]);
 }
+
+// call() writes results only on success. A trap returns before the write-back,
+// so the slice keeps the caller's own values — documented rather than papered
+// over, because the guest produced nothing to put there.
+#[test]
+fn a_trapping_call_leaves_results_alone() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let module = Module::new(&mut store, DIV_BY_ZERO_WASM).unwrap();
+    let instance = Instance::new(&mut store, &module, &[]).unwrap();
+    let func = instance.get_func(&mut store, "f").unwrap();
+
+    let mut results = [Val::I32(7)];
+    let err = func.call(&mut store, &[], &mut results).err().unwrap();
+    assert!(matches!(err, Error::Trap(_)));
+    assert_eq!(results, [Val::I32(7)]);
+}
