@@ -75,12 +75,18 @@ jobs:
       - name: Clean the submodule
         run: git -C crates/zwasm-sys/zwasm clean -xfd
 
+      # The listing is captured before it is searched, so a failing
+      # `cargo package --list` aborts the step. Running it inside an `if`
+      # condition would suspend `set -e` and turn cargo's own failure into a
+      # silent pass, which is the one thing an assertion must not do.
       - name: Assert no vendored Zig packages reach the crate
         run: |
           set -euo pipefail
-          if cargo package --list -p zwasm-sys | grep -q '^zwasm/zig-pkg/'; then
+          listing=$(cargo package --list -p zwasm-sys)
+          leaked=$(printf '%s\n' "$listing" | grep '^zwasm/zig-pkg/' || true)
+          if [ -n "$leaked" ]; then
             echo "::error::zwasm/zig-pkg/ leaked into the package"
-            cargo package --list -p zwasm-sys | grep '^zwasm/zig-pkg/'
+            printf '%s\n' "$leaked"
             exit 1
           fi
 
