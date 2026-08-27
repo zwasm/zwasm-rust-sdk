@@ -90,8 +90,8 @@ fn test_wasi_config_preopen_dir_interior_null() {
 #[test]
 fn test_module_with_wasi_import() {
     let engine = Engine::new().unwrap();
-    let store = Store::new(&engine).unwrap();
-    let module = Module::new(&store, WASI_IMPORT_WASM);
+    let mut store = Store::new(&engine).unwrap();
+    let module = Module::new(&mut store, WASI_IMPORT_WASM);
     assert!(module.is_ok());
 }
 
@@ -103,10 +103,10 @@ fn test_instantiate_with_wasi_succeeds() {
     let mut config = WasiConfig::new().unwrap();
     config.set_args(&["prog"]).unwrap();
     config.inherit_stdio();
-    store.set_wasi(config);
+    store.set_wasi(config).unwrap();
 
-    let module = Module::new(&store, WASI_IMPORT_WASM).unwrap();
-    let instance = Instance::new(&store, &module, &[]);
+    let module = Module::new(&mut store, WASI_IMPORT_WASM).unwrap();
+    let instance = Instance::new(&mut store, &module, &[]);
     assert!(instance.is_ok());
 }
 
@@ -117,14 +117,14 @@ fn test_set_wasi_twice_replaces() {
 
     let mut first = WasiConfig::new().unwrap();
     first.set_args(&["first"]).unwrap();
-    store.set_wasi(first);
+    store.set_wasi(first).unwrap();
 
     let mut second = WasiConfig::new().unwrap();
     second.set_args(&["second"]).unwrap();
-    store.set_wasi(second);
+    store.set_wasi(second).unwrap();
 
-    let module = Module::new(&store, WASI_IMPORT_WASM).unwrap();
-    let instance = Instance::new(&store, &module, &[]);
+    let module = Module::new(&mut store, WASI_IMPORT_WASM).unwrap();
+    let instance = Instance::new(&mut store, &module, &[]);
     assert!(instance.is_ok());
 }
 
@@ -134,6 +134,31 @@ fn test_unset_wasi() {
     let mut store = Store::new(&engine).unwrap();
 
     let config = WasiConfig::new().unwrap();
-    store.set_wasi(config);
-    store.unset_wasi();
+    store.set_wasi(config).unwrap();
+    store.unset_wasi().unwrap();
+}
+
+// zwasm captures a raw pointer to the store's WASI host in each import binding
+// at instantiation time (`.ctx = wasi_host_ptr`, src/api/instance.zig), while
+// zwasm_store_set_wasi frees the old host immediately. Replacing the host after
+// an instance exists therefore leaves that instance pointing at freed memory,
+// so the store refuses it rather than letting safe code reach the crash.
+#[test]
+fn changing_the_wasi_host_after_instantiating_is_refused() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+
+    let mut first = WasiConfig::new().unwrap();
+    first.set_args(&["prog"]).unwrap();
+    store.set_wasi(first).unwrap();
+
+    let module = Module::new(&mut store, WASI_IMPORT_WASM).unwrap();
+    let _instance = Instance::new(&mut store, &module, &[]).unwrap();
+
+    let second = WasiConfig::new().unwrap();
+    let err = store.set_wasi(second).err().unwrap();
+    assert!(err.to_string().contains("after instantiating"));
+
+    let err = store.unset_wasi().err().unwrap();
+    assert!(err.to_string().contains("after instantiating"));
 }
