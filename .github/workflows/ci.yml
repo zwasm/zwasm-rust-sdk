@@ -35,10 +35,26 @@ jobs:
       - name: Build
         run: cargo build --all-targets
 
+      # One test thread, because zwasm installs its fault handler with a race:
+      # `signal.ensureInstalled` marks the handler installed before it installs
+      # it, so a second thread entering JIT code during that window runs with
+      # none and dies on the first guard fault. Tests here execute wasm and
+      # several trap on purpose, so running them in parallel fails
+      # intermittently — observed as a SIGBUS on macOS aarch64, where a guard
+      # hit raises SIGBUS rather than SIGSEGV.
+      #
+      # Exit condition: zwasm#320. When that lands and the submodule is bumped
+      # past it, drop this and let the harness parallelise again. Note that it
+      # only protects this suite — an embedder instantiating from a thread pool
+      # has no equivalent lever, which is why the fix has to be upstream.
       - name: Tests
+        env:
+          RUST_TEST_THREADS: 1
         run: cargo test --all-targets
 
       - name: Doc tests
+        env:
+          RUST_TEST_THREADS: 1
         run: cargo test --doc
 
   # The crate that reaches crates.io is not the working tree. `cargo package`
