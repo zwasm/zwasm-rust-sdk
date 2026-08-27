@@ -49,6 +49,7 @@ fn main() {
         .allowlist_type("zwasm_.*")
         .allowlist_var("wasm_.*")
         .allowlist_var("zwasm_.*")
+        .allowlist_var("ZWASM_.*")
         .generate()
         .expect("Unable to generate bindings with bindgen. Please check that the zwasm headers are valid and accessible.");
 

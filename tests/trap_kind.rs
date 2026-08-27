@@ -107,14 +107,65 @@ fn an_unknown_kind_round_trips() {
     assert_eq!(TrapKind::from(-1), TrapKind::Unknown(-1));
 }
 
-// Every ZWASM_TRAP_* constant maps to a named variant; none of them fall
-// through to Unknown. The range is from zwasm.h.
+// Each ZWASM_TRAP_* constant maps to the variant named after it. The numbers
+// come from the bindings rather than being written out again here, so bumping
+// the submodule to a zwasm that renumbers or adds a kind breaks this test
+// instead of silently mislabelling traps at runtime.
 #[test]
-fn every_documented_kind_is_named() {
-    for code in 0..=17 {
+fn every_constant_maps_to_the_variant_named_after_it() {
+    use zwasm_sys as sys;
+
+    let pairs: &[(u32, TrapKind)] = &[
+        (sys::ZWASM_TRAP_BINDING_ERROR, TrapKind::BindingError),
+        (sys::ZWASM_TRAP_UNREACHABLE, TrapKind::Unreachable),
+        (sys::ZWASM_TRAP_DIV_BY_ZERO, TrapKind::DivByZero),
+        (sys::ZWASM_TRAP_INT_OVERFLOW, TrapKind::IntOverflow),
+        (
+            sys::ZWASM_TRAP_INVALID_CONVERSION,
+            TrapKind::InvalidConversion,
+        ),
+        (sys::ZWASM_TRAP_OOB_MEMORY, TrapKind::OobMemory),
+        (sys::ZWASM_TRAP_OOB_TABLE, TrapKind::OobTable),
+        (
+            sys::ZWASM_TRAP_UNINITIALIZED_ELEM,
+            TrapKind::UninitializedElem,
+        ),
+        (
+            sys::ZWASM_TRAP_INDIRECT_CALL_MISMATCH,
+            TrapKind::IndirectCallMismatch,
+        ),
+        (sys::ZWASM_TRAP_STACK_OVERFLOW, TrapKind::StackOverflow),
+        (sys::ZWASM_TRAP_OUT_OF_MEMORY, TrapKind::OutOfMemory),
+        (sys::ZWASM_TRAP_NULL_REFERENCE, TrapKind::NullReference),
+        (sys::ZWASM_TRAP_CAST_FAILURE, TrapKind::CastFailure),
+        (
+            sys::ZWASM_TRAP_UNCAUGHT_EXCEPTION,
+            TrapKind::UncaughtException,
+        ),
+        (sys::ZWASM_TRAP_UNALIGNED_ATOMIC, TrapKind::UnalignedAtomic),
+        (
+            sys::ZWASM_TRAP_EXPECTED_SHARED_MEMORY,
+            TrapKind::ExpectedSharedMemory,
+        ),
+        (sys::ZWASM_TRAP_INTERRUPTED, TrapKind::Interrupted),
+        (sys::ZWASM_TRAP_OUT_OF_FUEL, TrapKind::OutOfFuel),
+    ];
+
+    for &(code, expected) in pairs {
+        assert_eq!(
+            TrapKind::from(code as i32),
+            expected,
+            "ZWASM_TRAP_* constant {code} maps to the wrong variant"
+        );
+    }
+
+    // And nothing in the documented range falls through to Unknown, which
+    // would mean the conversion lost a kind the header still defines.
+    let highest = pairs.iter().map(|&(c, _)| c).max().unwrap();
+    for code in 0..=highest {
         assert!(
-            !matches!(TrapKind::from(code), TrapKind::Unknown(_)),
-            "kind {code} is documented in zwasm.h but has no variant"
+            !matches!(TrapKind::from(code as i32), TrapKind::Unknown(_)),
+            "kind {code} is within the documented range but has no variant"
         );
     }
 }
