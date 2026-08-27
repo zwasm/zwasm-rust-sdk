@@ -72,6 +72,10 @@ impl Instance {
     /// matched by position, because `wasm_instance_exports` returns values
     /// without names.
     ///
+    /// Each call allocates a fresh C handle that the store owns until it drops,
+    /// so looking the same export up in a loop grows the store. Resolve once
+    /// and keep the [`Func`] — it is `Copy`.
+    ///
     /// # Panics
     ///
     /// Panics when `self` belongs to a different store.

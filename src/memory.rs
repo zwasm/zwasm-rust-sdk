@@ -91,13 +91,12 @@ impl Memory {
     pub fn grow(&self, store: &mut Store, delta: u32) -> Result<u32, Error> {
         store.check(self.store_id);
         let memory_type = unsafe { sys::wasm_memory_type(self.ptr) };
-        let limits = unsafe { sys::wasm_memorytype_limits(memory_type) };
-        if limits.is_null() {
+        if memory_type.is_null() {
             return Err(Error::Message(
                 "failed to read the memory's type".to_string(),
             ));
         }
-
+        let limits = unsafe { sys::wasm_memorytype_limits(memory_type) };
         let max = unsafe { (*limits).max };
         unsafe { sys::wasm_memorytype_delete(memory_type) };
         let size = unsafe { sys::wasm_memory_size(self.ptr) };

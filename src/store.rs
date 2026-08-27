@@ -92,6 +92,11 @@ impl Store {
     /// (`.ctx = wasi_host_ptr`, `src/api/instance.zig`), and replacing the host
     /// frees the old one immediately, so an existing instance would be left
     /// calling into freed memory. Install the host before instantiating.
+    ///
+    /// The refusal is permanent for the store's remaining life, and deliberately
+    /// blunt: only an instance that imports WASI captures the pointer, but the
+    /// store cannot see an instance's imports, so it refuses after any
+    /// instantiation. Use a fresh store for a different WASI configuration.
     pub fn set_wasi(&mut self, config: WasiConfig) -> Result<(), Error> {
         if !self.instances.is_empty() {
             return Err(Error::Message("cannot change the WASI host after instantiating: an existing instance holds a pointer to it".to_string()));
