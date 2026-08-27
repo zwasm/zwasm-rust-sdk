@@ -43,19 +43,20 @@ jobs:
       # intermittently — observed as a SIGBUS on macOS aarch64, where a guard
       # hit raises SIGBUS rather than SIGSEGV.
       #
+      # Passed as the flag rather than RUST_TEST_THREADS so it reads at the
+      # call site, and so doctests are covered by the documented interface
+      # rather than by rustdoc's handling of the env var, which has not always
+      # matched libtest's.
+      #
       # Exit condition: zwasm#320. When that lands and the submodule is bumped
       # past it, drop this and let the harness parallelise again. Note that it
       # only protects this suite — an embedder instantiating from a thread pool
       # has no equivalent lever, which is why the fix has to be upstream.
       - name: Tests
-        env:
-          RUST_TEST_THREADS: 1
-        run: cargo test --all-targets
+        run: cargo test --all-targets -- --test-threads=1
 
       - name: Doc tests
-        env:
-          RUST_TEST_THREADS: 1
-        run: cargo test --doc
+        run: cargo test --doc -- --test-threads=1
 
   # The crate that reaches crates.io is not the working tree. `cargo package`
   # applies the `include` list, but on top of that it sweeps up every file named
