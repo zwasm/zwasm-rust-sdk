@@ -44,12 +44,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wasm = std::fs::read("your_module.wasm")?;
 
     let engine = Engine::new()?;
-    let store = Store::new(&engine)?;
-    let module = Module::new(&store, &wasm)?;
-    let instance = Instance::new(&store, &module, &[])?;
+    let mut store = Store::new(&engine)?;
+    let module = Module::new(&mut store, &wasm)?;
+    let instance = Instance::new(&mut store, &module, &[])?;
 
-    let add = instance.get_func_by_name(&module, "add")?;
-    let results = add.call(&[Val::I32(10), Val::I32(32)])?;
+    let add = instance
+        .get_func(&mut store, "add")
+        .ok_or("no export named add")?;
+    let mut results = [Val::I32(0)];
+    add.call(&mut store, &[Val::I32(10), Val::I32(32)], &mut results)?;
     println!("results = {results:?}");
     Ok(())
 }
@@ -76,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     wasi.preopen_dir("/host/dir", "/")?;
     wasi.inherit_stdio();
 
-    store.set_wasi(wasi);
+    store.set_wasi(wasi)?;
     Ok(())
 }
 ```
