@@ -281,3 +281,32 @@ fn table_with_a_foreign_store_panics() {
     let table = Table::new(&mut store_a, 1, None).unwrap();
     let _ = table.size(&store_b);
 }
+
+// A memory created with no maximum stores the C API's "no maximum" sentinel,
+// and `grow` skips its own limit check by recognising that same sentinel coming
+// back from `wasm_memory_type`. zwasm converts it to a Zig `null` on the way in
+// and back to the sentinel on the way out, so the round trip holds — but if it
+// ever normalised the value differently, every grow on an unbounded memory
+// would start failing. This is what would notice.
+#[test]
+fn a_memory_without_a_maximum_keeps_growing() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let memory = Memory::new(&mut store, 1, None).unwrap();
+
+    assert_eq!(memory.grow(&mut store, 1).unwrap(), 1);
+    assert_eq!(memory.grow(&mut store, 2).unwrap(), 2);
+    assert_eq!(memory.size(&store), 4);
+}
+
+// The same round trip for a table, whose grow does not need the SDK-side check
+// (zwasm enforces a table's maximum itself) but reads the same sentinel.
+#[test]
+fn a_table_without_a_maximum_keeps_growing() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let table = Table::new(&mut store, 1, None).unwrap();
+
+    assert_eq!(table.grow(&mut store, 3).unwrap(), 1);
+    assert_eq!(table.size(&store), 4);
+}
