@@ -9,9 +9,15 @@ A recent stable Rust compiler is recommended. (Rust 2021 edition)
 ## Build and Platform Requirements
 
 - Requires [Zig](https://ziglang.org/) 0.16.0 in your PATH (used to build the zwasm C library)
+- Requires network access at build time — see below
 - Supported platforms: **Linux (x86_64, aarch64), macOS (x86_64, aarch64)**
 
 The zwasm C library is built from the vendored submodule and linked statically, so no shared library has to be installed on the machine that runs your binary.
+
+zwasm's `build.zig` imports its lint tool at the top level, so building the C
+library fetches that tool and its dependencies from GitHub on a cold cache.
+This is a property of the upstream build, not of this crate: an offline build
+or `cargo vendor --offline` will fail until zwasm makes the dependency lazy.
 
 ## Version Compatibility
 
