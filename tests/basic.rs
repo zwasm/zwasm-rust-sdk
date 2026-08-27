@@ -301,7 +301,7 @@ fn trap_error(wasm: &[u8]) -> Error {
     let mut results = vec![Val::I32(0); func.result_arity(&store)];
     let err = func.call(&mut store, &[], &mut results).err().unwrap();
     match err {
-        Error::Trap(_) => err,
+        Error::Trap { .. } => err,
         other => panic!("expected a trap, got {other:?}"),
     }
 }
@@ -388,6 +388,6 @@ fn a_trapping_call_leaves_results_alone() {
 
     let mut results = [Val::I32(7)];
     let err = func.call(&mut store, &[], &mut results).err().unwrap();
-    assert!(matches!(err, Error::Trap(_)));
+    assert!(matches!(err, Error::Trap { .. }));
     assert_eq!(results, [Val::I32(7)]);
 }

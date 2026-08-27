@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Updated the bundled zwasm C API to 2.5.0
 - The C library is now linked statically. Consumers no longer need `libzwasm.so` on the machine that runs the binary
 - Bindings are now generated from `wasm.h`, `zwasm.h` and `wasi.h` rather than a single header
+- `Error::Trap` now carries a machine-readable `TrapKind` beside the message, so a host can tell a guest trap from a cancellation or a fuel exhaustion without matching on the message text
 
 ### Added
 - `Engine`, `Store`, `Module`, `Instance` and `Func`, mirroring the wasm-c-api object model
