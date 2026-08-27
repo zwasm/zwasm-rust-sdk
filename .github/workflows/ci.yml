@@ -103,10 +103,12 @@ jobs:
           cd "$RUNNER_TEMP"/unpacked/zwasm-sys-*
           cargo build
 
-      # --no-verify: verification would build zwasm-sdk against the released
-      # zwasm-sys, which does not exist yet for an unpublished version.
-      - name: Package zwasm-sdk
-        run: cargo package -p zwasm-sdk --no-verify
+      # zwasm-sdk is deliberately not packaged here. Packaging it resolves
+      # `zwasm-sys = "^0.2.0"` against crates.io, which cannot succeed until
+      # that version is published — and `--no-verify` does not help, because
+      # the resolution happens while preparing the package rather than while
+      # verifying it. Nothing is lost: zwasm-sdk carries no submodule and no
+      # vendored files, so the leak this job exists for cannot occur there.
 
   # Single required status check for the branch ruleset. Point the ruleset at
   # `ci-required`, not at the individual `test (...)` matrix legs, so the matrix
