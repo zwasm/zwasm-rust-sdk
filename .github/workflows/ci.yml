@@ -84,12 +84,17 @@ jobs:
             exit 1
           fi
 
+      # --no-verify: cargo's own verification builds inside
+      # target/package/zwasm-sys-0.2.0/, where zwasm's build.zig fetches its
+      # lint tool into `zwasm/zig-pkg/`. Cargo sees the build write into the
+      # extracted package and refuses with "failed to verify package tarball".
+      # The step below is the verification instead, and it builds outside the
+      # package directory where that write is harmless.
       - name: Package zwasm-sys
-        run: cargo package -p zwasm-sys
+        run: cargo package -p zwasm-sys --no-verify
 
-      # `cargo package` verifies by building in place; this builds what a
-      # consumer actually downloads, which is the only way the failure above
-      # shows up.
+      # This is what a consumer actually downloads, and the only place the
+      # zig-pkg leak would surface.
       - name: Build the packaged crate
         run: |
           set -euo pipefail
