@@ -41,6 +41,89 @@ jobs:
       - name: Doc tests
         run: cargo test --doc
 
+  # The crate that reaches crates.io is not the working tree. `cargo package`
+  # applies the `include` list, but on top of that it sweeps up every file named
+  # README* or LICENSE* it finds anywhere in the package directory — including
+  # inside the submodule's gitignored `zig-pkg/` package cache. What lands in the
+  # crate is then a half-populated cache directory: enough for Zig to consider a
+  # dependency resolved, not enough to build it, so the published crate fails
+  # where the working tree succeeds. `exclude` cannot help; cargo ignores it when
+  # `include` is set.
+  #
+  # A fresh checkout has no such cache, so this job passes trivially here. It
+  # earns its place two ways: the assertion states the invariant in a form the
+  # release procedure runs verbatim on a developer machine, where the cache does
+  # exist, and the build proves that whatever does get packaged compiles.
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
+        with:
+          version: 0.16.0
+
+      # No-op on a fresh checkout. Kept so this job runs exactly what the release
+      # procedure runs.
+      - name: Clean the submodule
+        run: git -C crates/zwasm-sys/zwasm clean -xfd
+
+      # The listing is captured before it is searched, so a failing
+      # `cargo package --list` aborts the step. Running it inside an `if`
+      # condition would suspend `set -e` and turn cargo's own failure into a
+      # silent pass, which is the one thing an assertion must not do.
+      - name: Assert no vendored Zig packages reach the crate
+        run: |
+          set -euo pipefail
+          listing=$(cargo package --list -p zwasm-sys)
+          leaked=$(printf '%s\n' "$listing" | grep '^zwasm/zig-pkg/' || true)
+          if [ -n "$leaked" ]; then
+            echo "::error::zwasm/zig-pkg/ leaked into the package"
+            printf '%s\n' "$leaked"
+            exit 1
+          fi
+
+      # --no-verify: cargo's own verification builds inside
+      # target/package/zwasm-sys-0.2.0/, where zwasm's build.zig fetches its
+      # lint tool into `zwasm/zig-pkg/`. Cargo sees the build write into the
+      # extracted package and refuses with "failed to verify package tarball".
+      # The step below is the verification instead, and it builds outside the
+      # package directory where that write is harmless.
+      #
+      # This flag is a workaround with an exit condition, not a permanent
+      # setting: zwasm#316 asks for the lint tool to become a lazy dependency,
+      # so `zig build static-lib` fetches nothing. When that lands and the
+      # submodule is bumped past it, drop `--no-verify` here and in the release
+      # procedure, and let cargo verify again. The unpack-and-build step below
+      # stays either way — it checks what a consumer downloads, which cargo's
+      # in-place verification does not.
+      - name: Package zwasm-sys
+        run: cargo package -p zwasm-sys --no-verify
+
+      # This is what a consumer actually downloads, and the only place the
+      # zig-pkg leak would surface.
+      - name: Build the packaged crate
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/unpacked"
+          tar xzf target/package/zwasm-sys-*.crate -C "$RUNNER_TEMP/unpacked"
+          cd "$RUNNER_TEMP"/unpacked/zwasm-sys-*
+          cargo build
+
+      # zwasm-sdk is deliberately not packaged here. Packaging it resolves
+      # `zwasm-sys = "^0.2.0"` against crates.io, which cannot succeed until
+      # that version is published — and `--no-verify` does not help, because
+      # the resolution happens while preparing the package rather than while
+      # verifying it. Nothing is lost: zwasm-sdk carries no submodule and no
+      # vendored files, so the leak this job exists for cannot occur there.
+
   # Single required status check for the branch ruleset. Point the ruleset at
   # `ci-required`, not at the individual `test (...)` matrix legs, so the matrix
   # can change without a settings change. `always()` so this job still reports a
@@ -48,7 +131,7 @@ jobs:
   # reports would block every pull request.
   ci-required:
     name: ci-required
-    needs: [test]
+    needs: [test, package]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -56,12 +139,19 @@ jobs:
       - name: Verdict
         env:
           TEST_RESULT: ${{ needs.test.result }}
+          PACKAGE_RESULT: ${{ needs.package.result }}
         shell: bash
         run: |
           set -euo pipefail
-          # `needs.test.result` is success only when every matrix leg succeeded.
+          # A matrix job's result is success only when every leg succeeded.
+          failed=0
           if [ "$TEST_RESULT" != "success" ]; then
             echo "::error::test did not pass (result=$TEST_RESULT)"
-            exit 1
+            failed=1
           fi
-          echo "test passed on all matrix legs"
+          if [ "$PACKAGE_RESULT" != "success" ]; then
+            echo "::error::package did not pass (result=$PACKAGE_RESULT)"
+            failed=1
+          fi
+          [ "$failed" = 0 ] || exit 1
+          echo "test and package both passed"
