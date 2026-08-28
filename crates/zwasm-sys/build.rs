@@ -76,6 +76,18 @@ fn build_zwasm(out_dir: &Path, zwasm_src_dir: &Path) -> PathBuf {
         panic!("Error: 'zig' command not found. Please install Zig and ensure it is in your PATH.");
     }
 
+    // `-Dtarget` is passed for host builds too, not only cross ones. Without it
+    // Zig detects the build machine's CPU and emits code for it — measured here
+    // as 2216 AVX-family instructions against none with the triple given — while
+    // the Rust half of this crate compiles for the target's baseline, because
+    // that is rustc's default and `target-cpu=native` is opt-in. Passing the
+    // triple makes both halves agree, and stops a library built on one machine
+    // from faulting on another that lacks those instructions.
+    //
+    // Building for the host's CPU means setting it on both sides: `-C
+    // target-cpu=native` for rustc and `-Dcpu=native` here. Doing one alone
+    // achieves nothing, and doing both gives up portability of the result.
+    //
     // Zig's triple is `<arch>-<os>-<abi>`, and the names below are Rust's, taken
     // verbatim. That holds for every platform this crate claims — Linux and
     // macOS on x86_64 and aarch64 — but the two vocabularies are not identical,
