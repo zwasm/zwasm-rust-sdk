@@ -40,9 +40,11 @@ fn main() {
     fs::write(&wrapper, "#include \"zwasm.h\"\n#include \"wasi.h\"\n")
         .expect("Failed to write wrapper.h");
 
+    let target = std::env::var("TARGET").expect("TARGET not set");
     let bindings = bindgen::Builder::default()
         .header(wrapper.to_str().unwrap())
         .clang_arg(format!("-I{}", zwasm_include_dir.display()))
+        .clang_arg(format!("--target={target}"))
         .allowlist_function("wasm_.*")
         .allowlist_function("zwasm_.*")
         .allowlist_type("wasm_.*")
@@ -74,6 +76,15 @@ fn build_zwasm(out_dir: &Path, zwasm_src_dir: &Path) -> PathBuf {
         panic!("Error: 'zig' command not found. Please install Zig and ensure it is in your PATH.");
     }
 
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH not set");
+    let os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not set");
+    let abi = env::var("CARGO_CFG_TARGET_ENV").expect("CARGO_CFG_TARGET_ENV not set");
+    let triple = if abi.is_empty() {
+        format!("{arch}-{os}")
+    } else {
+        format!("{arch}-{os}-{abi}")
+    };
+
     // Build zwasm C library using zig
     let status = Command::new("zig")
         .current_dir(zwasm_src_dir)
@@ -81,6 +92,7 @@ fn build_zwasm(out_dir: &Path, zwasm_src_dir: &Path) -> PathBuf {
         .env("ZIG_GLOBAL_CACHE_DIR", &zig_global_cache_dir)
         .arg("build")
         .arg("static-lib")
+        .arg(format!("-Dtarget={triple}"))
         .arg("-Dcompiler-rt=true")
         .arg("-Doptimize=ReleaseSafe")
         .arg("-p")
