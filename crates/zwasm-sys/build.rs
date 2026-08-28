@@ -40,9 +40,11 @@ fn main() {
     fs::write(&wrapper, "#include \"zwasm.h\"\n#include \"wasi.h\"\n")
         .expect("Failed to write wrapper.h");
 
+    let target = std::env::var("TARGET").expect("TARGET not set");
     let bindings = bindgen::Builder::default()
         .header(wrapper.to_str().unwrap())
         .clang_arg(format!("-I{}", zwasm_include_dir.display()))
+        .clang_arg(format!("--target={target}"))
         .allowlist_function("wasm_.*")
         .allowlist_function("zwasm_.*")
         .allowlist_type("wasm_.*")
@@ -74,6 +76,38 @@ fn build_zwasm(out_dir: &Path, zwasm_src_dir: &Path) -> PathBuf {
         panic!("Error: 'zig' command not found. Please install Zig and ensure it is in your PATH.");
     }
 
+    // `-Dtarget` is passed for host builds too, not only cross ones. Without it
+    // Zig detects the build machine's CPU and emits code for it — measured here
+    // as 2216 AVX-family instructions against none with the triple given — while
+    // the Rust half of this crate compiles for the target's baseline, because
+    // that is rustc's default and `target-cpu=native` is opt-in. Passing the
+    // triple makes both halves agree, and stops a library built on one machine
+    // from faulting on another that lacks those instructions.
+    //
+    // Building for the host's CPU means setting it on both sides: `-C
+    // target-cpu=native` for rustc and `-Dcpu=native` here. Doing one alone
+    // achieves nothing, and doing both gives up portability of the result.
+    //
+    // Zig's triple is `<arch>-<os>-<abi>`, and the names below are Rust's, taken
+    // verbatim. That holds for every platform this crate claims — Linux and
+    // macOS on x86_64 and aarch64 — but the two vocabularies are not identical,
+    // and where they part the result is a valid triple for the wrong thing
+    // rather than an error.
+    //
+    // `armv7-unknown-linux-gnueabihf` is the case to have in mind: Rust splits
+    // the ABI across `CARGO_CFG_TARGET_ENV` (`gnu`) and `CARGO_CFG_TARGET_ABI`
+    // (`eabihf`), so reading only the former yields `arm-linux-gnu` where Zig
+    // wants `arm-linux-gnueabihf`. Zig accepts both, and builds soft-float for
+    // the first. Check the mapping before adding a platform.
+    let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH not set");
+    let os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not set");
+    let abi = env::var("CARGO_CFG_TARGET_ENV").expect("CARGO_CFG_TARGET_ENV not set");
+    let triple = if abi.is_empty() {
+        format!("{arch}-{os}")
+    } else {
+        format!("{arch}-{os}-{abi}")
+    };
+
     // Build zwasm C library using zig
     let status = Command::new("zig")
         .current_dir(zwasm_src_dir)
@@ -81,6 +115,7 @@ fn build_zwasm(out_dir: &Path, zwasm_src_dir: &Path) -> PathBuf {
         .env("ZIG_GLOBAL_CACHE_DIR", &zig_global_cache_dir)
         .arg("build")
         .arg("static-lib")
+        .arg(format!("-Dtarget={triple}"))
         .arg("-Dcompiler-rt=true")
         .arg("-Doptimize=ReleaseSafe")
         .arg("-p")

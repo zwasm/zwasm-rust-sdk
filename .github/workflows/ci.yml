@@ -141,6 +141,70 @@ jobs:
       # verifying it. Nothing is lost: zwasm-sdk carries no submodule and no
       # vendored files, so the leak this job exists for cannot occur there.
 
+  # `cargo build --target` links nothing for a library crate, so a
+  # host-architecture libzwasm.a inside a cross target directory goes unnoticed
+  # until something links — a test binary, or the containerd shim. `--tests` is
+  # what makes this job catch it; without it the job passes on the very bug it
+  # exists for.
+  cross:
+    name: cross (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # musl, because the shim is meant to be linked statically into a
+        # container image, which is where an architecture mismatch bites.
+        target:
+          - aarch64-unknown-linux-musl
+          - x86_64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
+        with:
+          version: 0.16.0
+
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2.87.0
+        with:
+          tool: cargo-zigbuild
+
+      - name: Cross-build, linking
+        run: cargo zigbuild --target ${{ matrix.target }} --tests
+
+      # A link that succeeds is most of the answer, but not all of it: assert
+      # the artifact really is the target architecture, so this job still fails
+      # if a future change makes the link succeed for the wrong reason.
+      - name: Assert the test binaries are ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          case "${{ matrix.target }}" in
+            aarch64-*) want="ARM aarch64" ;;
+            x86_64-*)  want="x86-64" ;;
+            *) echo "::error::unhandled architecture for ${{ matrix.target }}"; exit 1 ;;
+          esac
+          found=0
+          for bin in target/${{ matrix.target }}/debug/deps/*; do
+            [ -x "$bin" ] && [ ! -d "$bin" ] || continue
+            file "$bin" | grep -q "$want" || {
+              echo "::error::$bin is not $want"; file "$bin"; exit 1; }
+            found=$((found + 1))
+          done
+          [ "$found" -gt 0 ] || { echo "::error::no linked binary to check"; exit 1; }
+          echo "checked $found binaries"
+
   # Single required status check for the branch ruleset. Point the ruleset at
   # `ci-required`, not at the individual `test (...)` matrix legs, so the matrix
   # can change without a settings change. `always()` so this job still reports a
@@ -148,7 +212,7 @@ jobs:
   # reports would block every pull request.
   ci-required:
     name: ci-required
-    needs: [test, package]
+    needs: [test, cross, package]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -156,6 +220,7 @@ jobs:
       - name: Verdict
         env:
           TEST_RESULT: ${{ needs.test.result }}
+          CROSS_RESULT: ${{ needs.cross.result }}
           PACKAGE_RESULT: ${{ needs.package.result }}
         shell: bash
         run: |
@@ -166,9 +231,13 @@ jobs:
             echo "::error::test did not pass (result=$TEST_RESULT)"
             failed=1
           fi
+          if [ "$CROSS_RESULT" != "success" ]; then
+            echo "::error::cross did not pass (result=$CROSS_RESULT)"
+            failed=1
+          fi
           if [ "$PACKAGE_RESULT" != "success" ]; then
             echo "::error::package did not pass (result=$PACKAGE_RESULT)"
             failed=1
           fi
           [ "$failed" = 0 ] || exit 1
-          echo "test and package both passed"
+          echo "test, cross and package all passed"
