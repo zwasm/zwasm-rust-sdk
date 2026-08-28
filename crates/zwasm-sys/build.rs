@@ -76,6 +76,17 @@ fn build_zwasm(out_dir: &Path, zwasm_src_dir: &Path) -> PathBuf {
         panic!("Error: 'zig' command not found. Please install Zig and ensure it is in your PATH.");
     }
 
+    // Zig's triple is `<arch>-<os>-<abi>`, and the names below are Rust's, taken
+    // verbatim. That holds for every platform this crate claims — Linux and
+    // macOS on x86_64 and aarch64 — but the two vocabularies are not identical,
+    // and where they part the result is a valid triple for the wrong thing
+    // rather than an error.
+    //
+    // `armv7-unknown-linux-gnueabihf` is the case to have in mind: Rust splits
+    // the ABI across `CARGO_CFG_TARGET_ENV` (`gnu`) and `CARGO_CFG_TARGET_ABI`
+    // (`eabihf`), so reading only the former yields `arm-linux-gnu` where Zig
+    // wants `arm-linux-gnueabihf`. Zig accepts both, and builds soft-float for
+    // the first. Check the mapping before adding a platform.
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH not set");
     let os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not set");
     let abi = env::var("CARGO_CFG_TARGET_ENV").expect("CARGO_CFG_TARGET_ENV not set");

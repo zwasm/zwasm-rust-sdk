@@ -196,13 +196,14 @@ jobs:
             *) echo "::error::unhandled architecture for ${{ matrix.target }}"; exit 1 ;;
           esac
           found=0
-          for bin in target/${{ matrix.target }}/debug/deps/basic-*; do
+          for bin in target/${{ matrix.target }}/debug/deps/*; do
             [ -x "$bin" ] && [ ! -d "$bin" ] || continue
             file "$bin" | grep -q "$want" || {
               echo "::error::$bin is not $want"; file "$bin"; exit 1; }
-            found=1
+            found=$((found + 1))
           done
-          [ "$found" = 1 ] || { echo "::error::no test binary to check"; exit 1; }
+          [ "$found" -gt 0 ] || { echo "::error::no linked binary to check"; exit 1; }
+          echo "checked $found binaries"
 
   # Single required status check for the branch ruleset. Point the ruleset at
   # `ci-required`, not at the individual `test (...)` matrix legs, so the matrix
