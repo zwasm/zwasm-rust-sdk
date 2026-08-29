@@ -348,31 +348,57 @@ fn empty_named_export_does_not_poison_lookups() {
     f.call(&mut store, &[], &mut []).unwrap();
 }
 
-// zwasm's wasm_func_call returns null — "no trap", i.e. success — for a func
-// with no instance behind it ("handle.instance orelse return null",
-// src/api/instance.zig), so calling a host function directly used to report
-// success with untouched results and the callback never running. A host
-// function is only callable by a guest, through an import.
+// `wasm_func_call` used to return null — no trap, therefore success — for a
+// func with no instance behind it, without running the callback or writing
+// results. The caller read its own uninitialised buffer as a completed call, so
+// the SDK refused the call outright. zwasm/zwasm#315 made zwasm invoke the
+// callback instead, which is also what wasmtime does, and the refusal is gone.
 #[test]
-fn calling_a_host_function_directly_is_an_error() {
+fn a_host_function_can_be_called_directly() {
     let engine = Engine::new().unwrap();
     let mut store = Store::new(&engine).unwrap();
     let host_fn = new_add_one_host_func(&mut store);
 
     let mut results = [Val::I32(0)];
-    let err = host_fn
+    host_fn
         .call(&mut store, &[Val::I32(41)], &mut results)
-        .err()
         .unwrap();
-    assert!(err.to_string().contains("cannot be called directly"));
-    assert_eq!(results, [Val::I32(0)], "results must be left untouched");
+    assert_eq!(
+        results,
+        [Val::I32(42)],
+        "the callback should have run and written its result"
+    );
 
-    // The same function still works as an import.
+    // And it is still the same function an import reaches.
     let module = Module::new(&mut store, CALLBACK_WASM).unwrap();
     let instance = Instance::new(&mut store, &module, &[host_fn]).unwrap();
     let f = instance.get_func(&mut store, "f").unwrap();
+    results = [Val::I32(0)];
     f.call(&mut store, &[Val::I32(41)], &mut results).unwrap();
     assert_eq!(results, [Val::I32(42)]);
+}
+
+// The arity check is the SDK's own and runs before the call, so it answers for
+// a host function the same way it does for a guest one. zwasm traps on a
+// mismatch too, but with a binding error rather than a message naming the
+// arities.
+#[test]
+fn a_direct_call_with_the_wrong_arity_is_refused() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let host_fn = new_add_one_host_func(&mut store);
+
+    let mut results = [Val::I32(0)];
+    let err = host_fn.call(&mut store, &[], &mut results).err().unwrap();
+    assert!(err.to_string().contains("expected 1 parameters"), "{err}");
+    assert_eq!(results, [Val::I32(0)], "results must be left untouched");
+
+    let mut none: [Val; 0] = [];
+    let err = host_fn
+        .call(&mut store, &[Val::I32(41)], &mut none)
+        .err()
+        .unwrap();
+    assert!(err.to_string().contains("expected 1 results"), "{err}");
 }
 
 // call() writes results only on success. A trap returns before the write-back,

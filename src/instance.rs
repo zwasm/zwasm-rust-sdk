@@ -134,6 +134,9 @@ impl Instance {
         }
         store.funcs.push(ptr);
 
-        Some(Func::from_export(ptr, store.id))
+        Some(Func {
+            ptr,
+            store_id: store.id,
+        })
     }
 }
