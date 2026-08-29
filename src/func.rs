@@ -139,7 +139,7 @@ impl Func {
         };
 
         let trap = unsafe { sys::wasm_func_call(self.ptr, &params_vec, &mut results_vec) };
-        trap_into_result(trap)?;
+        trap_into_result(trap, store)?;
 
         for (slot, val) in results.iter_mut().zip(results_vals) {
             *slot = val.into();

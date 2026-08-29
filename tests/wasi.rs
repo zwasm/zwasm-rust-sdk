@@ -1,4 +1,5 @@
 use zwasm_sdk::engine::Engine;
+use zwasm_sdk::error::{Error, TrapKind};
 use zwasm_sdk::instance::Instance;
 use zwasm_sdk::module::Module;
 use zwasm_sdk::store::Store;
@@ -184,4 +185,153 @@ fn a_refused_wasi_config_is_released() {
         rejected.set_args(&["never installed"]).unwrap();
         assert!(store.set_wasi(rejected).is_err());
     }
+}
+
+// (module
+//   (import "wasi_snapshot_preview1" "proc_exit" (func $exit (param i32)))
+//   (func (export "_start") (call $exit (i32.const 0))))
+const WASI_EXIT_WASM: [u8; 95] = [
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x60, 0x01, 0x7f, 0x00, 0x60,
+    0x00, 0x00, 0x02, 0x24, 0x01, 0x16, 0x77, 0x61, 0x73, 0x69, 0x5f, 0x73, 0x6e, 0x61, 0x70, 0x73,
+    0x68, 0x6f, 0x74, 0x5f, 0x70, 0x72, 0x65, 0x76, 0x69, 0x65, 0x77, 0x31, 0x09, 0x70, 0x72, 0x6f,
+    0x63, 0x5f, 0x65, 0x78, 0x69, 0x74, 0x00, 0x00, 0x03, 0x02, 0x01, 0x01, 0x07, 0x0a, 0x01, 0x06,
+    0x5f, 0x73, 0x74, 0x61, 0x72, 0x74, 0x00, 0x01, 0x0a, 0x08, 0x01, 0x06, 0x00, 0x41, 0x00, 0x10,
+    0x00, 0x0b, 0x00, 0x0b, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x01, 0x04, 0x01, 0x00, 0x01, 0x65,
+];
+
+// The `i32.const` operand `_start` hands to proc_exit, patched per case, so the
+// status has to stay a single-byte signed LEB128.
+const EXIT_STATUS_OFFSET: usize = 78;
+
+// (module (func (export "_start") unreachable)) — traps without proc_exit.
+const FAULT_WASM: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x04, 0x01, 0x60, 0x00, 0x00, 0x03, 0x02,
+    0x01, 0x00, 0x07, 0x0a, 0x01, 0x06, 0x5f, 0x73, 0x74, 0x61, 0x72, 0x74, 0x00, 0x00, 0x0a, 0x05,
+    0x01, 0x03, 0x00, 0x00, 0x0b,
+];
+
+// (module
+//   (import "wasi_snapshot_preview1" "proc_exit" (func $exit (param i32)))
+//   (func $s (call $exit (i32.const 7)))
+//   (start $s)) — exits before instantiation returns.
+const START_EXIT_WASM: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x60, 0x01, 0x7f, 0x00, 0x60,
+    0x00, 0x00, 0x02, 0x24, 0x01, 0x16, 0x77, 0x61, 0x73, 0x69, 0x5f, 0x73, 0x6e, 0x61, 0x70, 0x73,
+    0x68, 0x6f, 0x74, 0x5f, 0x70, 0x72, 0x65, 0x76, 0x69, 0x65, 0x77, 0x31, 0x09, 0x70, 0x72, 0x6f,
+    0x63, 0x5f, 0x65, 0x78, 0x69, 0x74, 0x00, 0x00, 0x03, 0x02, 0x01, 0x01, 0x08, 0x01, 0x01, 0x0a,
+    0x08, 0x01, 0x06, 0x00, 0x41, 0x07, 0x10, 0x00, 0x0b, 0x00, 0x0e, 0x04, 0x6e, 0x61, 0x6d, 0x65,
+    0x01, 0x07, 0x02, 0x00, 0x01, 0x65, 0x01, 0x01, 0x73,
+];
+
+fn exit_wasm(status: u8) -> Vec<u8> {
+    assert!(
+        status <= 63,
+        "a status above 63 needs more than one LEB128 byte"
+    );
+    let mut wasm = WASI_EXIT_WASM.to_vec();
+    assert_eq!(
+        wasm[EXIT_STATUS_OFFSET], 0,
+        "EXIT_STATUS_OFFSET no longer points at the i32.const operand"
+    );
+    wasm[EXIT_STATUS_OFFSET] = status;
+    wasm
+}
+
+fn store_with_wasi(engine: &Engine) -> Store {
+    let mut store = Store::new(engine).unwrap();
+    let mut config = WasiConfig::new().unwrap();
+    config.set_args(&["prog"]).unwrap();
+    store.set_wasi(config).unwrap();
+    store
+}
+
+fn run_start(store: &mut Store, wasm: &[u8]) -> Result<(), Error> {
+    let module = Module::new(store, wasm).unwrap();
+    let instance = Instance::new(store, &module, &[])?;
+    let func = instance
+        .get_func(store, "_start")
+        .expect("no _start export");
+    func.call(store, &[], &mut [])
+}
+
+// A WASI command reaches proc_exit even when it succeeds: a wasi-libc `_start`
+// that returns normally calls proc_exit(0). So this is the ordinary end of a
+// successful run, and it still arrives as an Err.
+#[test]
+fn a_guest_that_exits_cleanly_reports_its_status() {
+    let engine = Engine::new().unwrap();
+    let mut store = store_with_wasi(&engine);
+
+    let err = run_start(&mut store, &exit_wasm(0)).unwrap_err();
+    assert!(
+        matches!(err, Error::WasiExit { code: 0 }),
+        "expected WasiExit {{ code: 0 }}, got {err:?}"
+    );
+}
+
+#[test]
+fn a_nonzero_exit_status_survives() {
+    let engine = Engine::new().unwrap();
+    let mut store = store_with_wasi(&engine);
+
+    let err = run_start(&mut store, &exit_wasm(3)).unwrap_err();
+    assert!(
+        matches!(err, Error::WasiExit { code: 3 }),
+        "expected WasiExit {{ code: 3 }}, got {err:?}"
+    );
+}
+
+// The one that pins the ordering. zwasm records the exit status on the Store
+// and never clears it (zwasm/zwasm#341), so after any proc_exit every later
+// trap in that Store still reads a status back. An implementation that asks
+// "is a status readable" before asking "what kind of trap is this" reports the
+// fault below as a clean exit — with code 0, the value that reads as success.
+//
+// Measured on zwasm 1bcc0edae, all three engines: the fault's own kind is
+// UNREACHABLE while zwasm_store_wasi_exit_code still answers true with 0.
+#[test]
+fn a_fault_after_an_exit_in_the_same_store_is_still_a_fault() {
+    let engine = Engine::new().unwrap();
+    let mut store = store_with_wasi(&engine);
+
+    let first = run_start(&mut store, &exit_wasm(0)).unwrap_err();
+    assert!(matches!(first, Error::WasiExit { code: 0 }), "{first:?}");
+
+    let second = run_start(&mut store, FAULT_WASM).unwrap_err();
+    assert!(
+        matches!(second, Error::Trap { .. }),
+        "a genuine unreachable read back the earlier exit status: {second:?}"
+    );
+    assert_eq!(second.trap_kind(), Some(TrapKind::Unreachable));
+}
+
+// A start section runs during instantiation, so the exit surfaces from
+// Instance::new rather than from a call. Both paths go through the same
+// conversion, and this is the one that would be missed if only Func::call did.
+#[test]
+fn a_start_section_exit_surfaces_from_instantiation() {
+    let engine = Engine::new().unwrap();
+    let mut store = store_with_wasi(&engine);
+
+    let module = Module::new(&mut store, START_EXIT_WASM).unwrap();
+    // `Instance` has no Debug, so unwrap_err is unavailable here.
+    let err = Instance::new(&mut store, &module, &[])
+        .err()
+        .expect("instantiation should have failed");
+    assert!(
+        matches!(err, Error::WasiExit { code: 7 }),
+        "expected WasiExit {{ code: 7 }}, got {err:?}"
+    );
+}
+
+// WasiExit carries a kind like any other trap: kind 18 always becomes
+// Error::WasiExit, so returning None here would leave TrapKind::WasiExit
+// unreachable through the public API.
+#[test]
+fn a_wasi_exit_carries_its_kind() {
+    let engine = Engine::new().unwrap();
+    let mut store = store_with_wasi(&engine);
+
+    let err = run_start(&mut store, &exit_wasm(0)).unwrap_err();
+    assert_eq!(err.trap_kind(), Some(TrapKind::WasiExit));
 }

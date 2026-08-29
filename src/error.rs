@@ -1,5 +1,7 @@
 use thiserror::Error;
-use zwasm_sys as sys;
+use zwasm_sys::{self as sys};
+
+use crate::store::Store;
 
 /// What a guest trap was, beside the message it carries.
 ///
@@ -55,7 +57,8 @@ pub enum TrapKind {
     /// This kind does not mean failure. A WASI command reaches `proc_exit`
     /// even when it succeeds — a wasi-libc `_start` that returns normally
     /// calls `proc_exit(0)` — so a clean run arrives here too, and the status
-    /// that says which it was is not carried by the kind.
+    /// that says which it was is not carried by the kind — [`Error::WasiExit`]
+    /// carries it.
     ///
     /// wasmtime has no trap code for this: it surfaces the same event as an
     /// `I32Exit` error carrying the status, not as a trap.
@@ -108,6 +111,16 @@ pub enum Error {
     /// Guest execution trapped. Carries the message from `wasm_trap_message`.
     #[error("{message}")]
     Trap { kind: TrapKind, message: String },
+
+    /// The guest ended itself through WASI `proc_exit`, asking for `code`.
+    ///
+    /// Not a failure. A WASI command reaches `proc_exit` even when it succeeds
+    /// — a wasi-libc `_start` that returns normally calls `proc_exit(0)` — so a
+    /// clean run arrives here too, and `code` is what says which it was.
+    ///
+    /// wasmtime reports the same event as `I32Exit`.
+    #[error("exited with status {code}")]
+    WasiExit { code: u32 },
 }
 
 impl Error {
@@ -115,6 +128,7 @@ impl Error {
         match self {
             Error::Trap { kind, message: _ } => Some(*kind),
             Error::Message(_) => None,
+            Error::WasiExit { .. } => Some(TrapKind::WasiExit),
         }
     }
 }
@@ -127,8 +141,16 @@ pub(crate) fn non_null<T>(ptr: *mut T, msg: &str) -> Result<*mut T, Error> {
     }
 }
 
-pub(crate) unsafe fn trap_to_error(trap: *mut sys::wasm_trap_t) -> Error {
+pub(crate) unsafe fn trap_to_error(trap: *mut sys::wasm_trap_t, store: &Store) -> Error {
     let kind = sys::zwasm_trap_kind(trap);
+    if kind == sys::ZWASM_TRAP_WASI_EXIT as i32 {
+        let mut code: u32 = 0;
+        if sys::zwasm_store_wasi_exit_code(store.ptr, &mut code) {
+            sys::wasm_trap_delete(trap);
+            return Error::WasiExit { code };
+        }
+    }
+
     let mut message = sys::wasm_message_t {
         size: 0,
         data: std::ptr::null_mut(),
@@ -151,10 +173,10 @@ pub(crate) unsafe fn trap_to_error(trap: *mut sys::wasm_trap_t) -> Error {
     }
 }
 
-pub(crate) fn trap_into_result(trap: *mut sys::wasm_trap_t) -> Result<(), Error> {
+pub(crate) fn trap_into_result(trap: *mut sys::wasm_trap_t, store: &Store) -> Result<(), Error> {
     if trap.is_null() {
         Ok(())
     } else {
-        Err(unsafe { trap_to_error(trap) })
+        Err(unsafe { trap_to_error(trap, store) })
     }
 }

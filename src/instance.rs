@@ -53,7 +53,7 @@ impl Instance {
         let ptr =
             unsafe { sys::wasm_instance_new(store.ptr, module.ptr, &import_extern_vec, &mut trap) };
 
-        trap_into_result(trap)?;
+        trap_into_result(trap, store)?;
         let ptr = non_null(ptr, "failed to create instance")?;
         store.instances.push(ptr);
 
