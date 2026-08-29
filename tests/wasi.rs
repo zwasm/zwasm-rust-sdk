@@ -223,6 +223,14 @@ const START_EXIT_WASM: &[u8] = &[
     0x01, 0x07, 0x02, 0x00, 0x01, 0x65, 0x01, 0x01, 0x73,
 ];
 
+// (module (func $s unreachable) (start $s)) — faults during instantiation,
+// without reaching proc_exit.
+const START_FAULT_WASM: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x04, 0x01, 0x60, 0x00, 0x00, 0x03, 0x02,
+    0x01, 0x00, 0x08, 0x01, 0x00, 0x0a, 0x05, 0x01, 0x03, 0x00, 0x00, 0x0b, 0x00, 0x0b, 0x04, 0x6e,
+    0x61, 0x6d, 0x65, 0x01, 0x04, 0x01, 0x00, 0x01, 0x73,
+];
+
 fn exit_wasm(status: u8) -> Vec<u8> {
     assert!(
         status <= 63,
@@ -281,14 +289,18 @@ fn a_nonzero_exit_status_survives() {
     );
 }
 
-// The one that pins the ordering. zwasm records the exit status on the Store
-// and never clears it (zwasm/zwasm#341), so after any proc_exit every later
-// trap in that Store still reads a status back. An implementation that asks
-// "is a status readable" before asking "what kind of trap is this" reports the
-// fault below as a clean exit — with code 0, the value that reads as success.
+// A fault is a fault even where a clean exit came before it. zwasm/zwasm#341
+// used to break this: the status lived on the Store and was never cleared, so
+// an implementation asking "is a status readable" before "what kind of trap is
+// this" reported the fault below as a clean exit with code 0 — the value that
+// reads as success. That was measured here on 1bcc0edae across all three
+// engines before the fix.
 //
-// Measured on zwasm 1bcc0edae, all three engines: the fault's own kind is
-// UNREACHABLE while zwasm_store_wasi_exit_code still answers true with 0.
+// The fix clears the status inside `wasm_func_call`, so this case no longer
+// separates the two orderings — it passes either way now, and is kept as the
+// behavioural assertion plus a guard against that clear regressing.
+// `a_start_section_fault_after_an_exit_is_still_a_fault` is what pins the
+// ordering, because instantiation is not a call and does not clear.
 #[test]
 fn a_fault_after_an_exit_in_the_same_store_is_still_a_fault() {
     let engine = Engine::new().unwrap();
@@ -321,6 +333,33 @@ fn a_start_section_exit_surfaces_from_instantiation() {
     assert!(
         matches!(err, Error::WasiExit { code: 7 }),
         "expected WasiExit {{ code: 7 }}, got {err:?}"
+    );
+}
+
+// The clear that zwasm/zwasm#341 added sits in `wasm_func_call`, so two calls
+// no longer catch an implementation that asks "is a status readable" before
+// asking "what kind of trap is this". Instantiation is not a call: it neither
+// clears the status nor is covered by that fix, so a start-section exit
+// followed by a start-section fault still reaches the stale status. This is
+// the case that keeps the ordering pinned.
+#[test]
+fn a_start_section_fault_after_an_exit_is_still_a_fault() {
+    let engine = Engine::new().unwrap();
+    let mut store = store_with_wasi(&engine);
+
+    let exiting = Module::new(&mut store, START_EXIT_WASM).unwrap();
+    let first = Instance::new(&mut store, &exiting, &[])
+        .err()
+        .expect("the start section should have exited");
+    assert!(matches!(first, Error::WasiExit { code: 7 }), "{first:?}");
+
+    let faulting = Module::new(&mut store, START_FAULT_WASM).unwrap();
+    let second = Instance::new(&mut store, &faulting, &[])
+        .err()
+        .expect("the start section should have trapped");
+    assert!(
+        matches!(second, Error::Trap { .. }),
+        "a start-section unreachable read back the earlier exit status: {second:?}"
     );
 }
 
