@@ -152,6 +152,7 @@ fn every_constant_maps_to_the_variant_named_after_it() {
         ),
         (sys::ZWASM_TRAP_INTERRUPTED, TrapKind::Interrupted),
         (sys::ZWASM_TRAP_OUT_OF_FUEL, TrapKind::OutOfFuel),
+        (sys::ZWASM_TRAP_WASI_EXIT, TrapKind::WasiExit),
     ];
 
     for &(code, expected) in pairs {

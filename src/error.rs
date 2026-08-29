@@ -49,6 +49,17 @@ pub enum TrapKind {
     Interrupted,
     /// `ZWASM_TRAP_OUT_OF_FUEL`. wasmtime calls this `OutOfFuel`.
     OutOfFuel,
+    /// `ZWASM_TRAP_WASI_EXIT`. The guest called WASI `proc_exit`, so the trap
+    /// reports a guest that ended itself rather than a guest that faulted.
+    ///
+    /// This kind does not mean failure. A WASI command reaches `proc_exit`
+    /// even when it succeeds — a wasi-libc `_start` that returns normally
+    /// calls `proc_exit(0)` — so a clean run arrives here too, and the status
+    /// that says which it was is not carried by the kind.
+    ///
+    /// wasmtime has no trap code for this: it surfaces the same event as an
+    /// `I32Exit` error carrying the status, not as a trap.
+    WasiExit,
     /// A kind this crate does not know about.
     ///
     /// Reached when the linked zwasm reports a kind added after this crate's
@@ -78,6 +89,7 @@ impl From<i32> for TrapKind {
             15 => TrapKind::ExpectedSharedMemory,
             16 => TrapKind::Interrupted,
             17 => TrapKind::OutOfFuel,
+            18 => TrapKind::WasiExit,
             other => TrapKind::Unknown(other),
         }
     }
