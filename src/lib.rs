@@ -78,7 +78,7 @@
 //! wasi.preopen_dir("/host/dir", "/")?;
 //! wasi.inherit_stdio();
 //!
-//! store.set_wasi(wasi)?;
+//! store.set_wasi(wasi);
 //! # Ok(())
 //! # }
 //! ```

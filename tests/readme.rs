@@ -55,6 +55,6 @@ fn readme_wasi_setup() -> Result<(), Box<dyn std::error::Error>> {
     wasi.preopen_dir(std::env::temp_dir().to_str().unwrap(), "/")?;
     wasi.inherit_stdio();
 
-    store.set_wasi(wasi)?;
+    store.set_wasi(wasi);
     Ok(())
 }

@@ -104,7 +104,7 @@ fn test_instantiate_with_wasi_succeeds() {
     let mut config = WasiConfig::new().unwrap();
     config.set_args(&["prog"]).unwrap();
     config.inherit_stdio();
-    store.set_wasi(config).unwrap();
+    store.set_wasi(config);
 
     let module = Module::new(&mut store, WASI_IMPORT_WASM).unwrap();
     let instance = Instance::new(&mut store, &module, &[]);
@@ -118,11 +118,11 @@ fn test_set_wasi_twice_replaces() {
 
     let mut first = WasiConfig::new().unwrap();
     first.set_args(&["first"]).unwrap();
-    store.set_wasi(first).unwrap();
+    store.set_wasi(first);
 
     let mut second = WasiConfig::new().unwrap();
     second.set_args(&["second"]).unwrap();
-    store.set_wasi(second).unwrap();
+    store.set_wasi(second);
 
     let module = Module::new(&mut store, WASI_IMPORT_WASM).unwrap();
     let instance = Instance::new(&mut store, &module, &[]);
@@ -135,55 +135,68 @@ fn test_unset_wasi() {
     let mut store = Store::new(&engine).unwrap();
 
     let config = WasiConfig::new().unwrap();
-    store.set_wasi(config).unwrap();
-    store.unset_wasi().unwrap();
+    store.set_wasi(config);
+    store.unset_wasi();
 }
 
-// zwasm captures a raw pointer to the store's WASI host in each import binding
-// at instantiation time (`.ctx = wasi_host_ptr`, src/api/instance.zig), while
-// zwasm_store_set_wasi frees the old host immediately. Replacing the host after
-// an instance exists therefore leaves that instance pointing at freed memory,
-// so the store refuses it rather than letting safe code reach the crash.
+// Replacing the host used to be refused: zwasm freed the old one while live
+// instances still held its address, so calling into an instance afterwards
+// reached released memory. zwasm/zwasm#314 retires the old host onto the store
+// instead, and this is the call that used to be the crash.
+//
+// It also pins what the replacement costs. The guest writes its exit status to
+// the host it bound at instantiation, while the reader looks at the store's
+// current one, so the status is invisible afterwards: the call arrives as a
+// trap that still carries TrapKind::WasiExit rather than as Error::WasiExit.
+// That is zwasm/zwasm#345, and this asserts today's behaviour rather than the
+// wanted one — when #345 lands, this test is what notices.
 #[test]
-fn changing_the_wasi_host_after_instantiating_is_refused() {
+fn an_instance_outlives_the_wasi_host_it_bound() {
     let engine = Engine::new().unwrap();
-    let mut store = Store::new(&engine).unwrap();
+    let mut store = store_with_wasi(&engine);
 
-    let mut first = WasiConfig::new().unwrap();
-    first.set_args(&["prog"]).unwrap();
-    store.set_wasi(first).unwrap();
+    let module = Module::new(&mut store, &exit_wasm(0)).unwrap();
+    let instance = Instance::new(&mut store, &module, &[]).unwrap();
 
-    let module = Module::new(&mut store, WASI_IMPORT_WASM).unwrap();
-    let _instance = Instance::new(&mut store, &module, &[]).unwrap();
+    let mut second = WasiConfig::new().unwrap();
+    second.set_args(&["replacement"]).unwrap();
+    store.set_wasi(second);
 
-    let second = WasiConfig::new().unwrap();
-    let err = store.set_wasi(second).err().unwrap();
-    assert!(err.to_string().contains("after instantiating"));
+    let start = instance
+        .get_func(&mut store, "_start")
+        .expect("no _start export");
+    let err = start.call(&mut store, &[], &mut []).unwrap_err();
 
-    let err = store.unset_wasi().err().unwrap();
-    assert!(err.to_string().contains("after instantiating"));
+    assert_eq!(
+        err.trap_kind(),
+        Some(TrapKind::WasiExit),
+        "the exit should still be recognisable as one: {err:?}"
+    );
+    assert!(
+        matches!(err, Error::Trap { .. }),
+        "zwasm/zwasm#345 appears to be fixed — the status is readable again, so \
+         this test and the caveat on Store::set_wasi should become WasiExit: {err:?}"
+    );
 }
 
-// The refusal consumes the config rather than handing it back in the error.
-// Pinned because it is a deliberate choice, not an oversight: reaching the
-// refusal means the calls are ordered wrongly, and a fresh store needs a fresh
-// config anyway. Freeing exactly once on this path is what the test proves —
-// a leak or a double free here would show up under a sanitizer.
+// Replacing repeatedly retires each old config onto the store rather than
+// freeing it, so this is where a double free or a leak of the retired configs
+// would show up under a sanitizer.
 #[test]
-fn a_refused_wasi_config_is_released() {
+fn replaced_wasi_configs_survive_until_the_store_dies() {
     let engine = Engine::new().unwrap();
     let mut store = Store::new(&engine).unwrap();
 
     let module = Module::new(&mut store, WASI_IMPORT_WASM).unwrap();
     let mut wasi = WasiConfig::new().unwrap();
     wasi.set_args(&["prog"]).unwrap();
-    store.set_wasi(wasi).unwrap();
+    store.set_wasi(wasi);
     let _instance = Instance::new(&mut store, &module, &[]).unwrap();
 
-    for _ in 0..8 {
-        let mut rejected = WasiConfig::new().unwrap();
-        rejected.set_args(&["never installed"]).unwrap();
-        assert!(store.set_wasi(rejected).is_err());
+    for n in 0..8 {
+        let mut next = WasiConfig::new().unwrap();
+        next.set_args(&[&format!("replacement {n}")]).unwrap();
+        store.set_wasi(next);
     }
 }
 
@@ -249,7 +262,7 @@ fn store_with_wasi(engine: &Engine) -> Store {
     let mut store = Store::new(engine).unwrap();
     let mut config = WasiConfig::new().unwrap();
     config.set_args(&["prog"]).unwrap();
-    store.set_wasi(config).unwrap();
+    store.set_wasi(config);
     store
 }
 

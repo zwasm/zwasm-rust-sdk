@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     wasi.preopen_dir("/host/dir", "/")?;
     wasi.inherit_stdio();
 
-    store.set_wasi(wasi)?;
+    store.set_wasi(wasi);
     Ok(())
 }
 ```
