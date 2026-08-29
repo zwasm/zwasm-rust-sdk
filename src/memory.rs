@@ -9,7 +9,7 @@ use crate::{
 ///
 /// A handle into a [`Store`]; the store owns the C memory and frees it on its own
 /// drop, so the handle is `Copy` and carries no destructor.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Memory {
     pub(crate) ptr: *mut sys::wasm_memory_t,
     pub(crate) store_id: u64,

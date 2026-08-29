@@ -12,6 +12,7 @@ use crate::error::{non_null, Error};
 ///
 /// This is a zwasm extension rather than part of the wasm-c-api, so it is not
 /// portable to other runtimes.
+#[derive(Debug)]
 pub struct WasiConfig {
     pub(crate) ptr: *mut sys::zwasm_wasi_config_t,
 }

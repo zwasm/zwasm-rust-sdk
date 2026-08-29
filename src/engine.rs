@@ -58,3 +58,17 @@ impl Default for Engine {
         Self::new().expect("failed to create default Engine")
     }
 }
+
+/// Written out rather than derived: the field is an `Arc<EngineInner>`, so
+/// deriving would need `EngineInner: Debug` and would nest one struct inside
+/// another to say one thing.
+///
+/// That one thing is identity. An `Engine` is a handle whose clones share the
+/// C engine, and the address is what shows two handles are the same engine.
+impl std::fmt::Debug for Engine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Engine")
+            .field("ptr", &self.inner.ptr)
+            .finish()
+    }
+}

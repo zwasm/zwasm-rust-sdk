@@ -12,7 +12,7 @@ use crate::{
 /// own drop, so the handle is `Copy` and carries no destructor. Obtained from an
 /// [`Instance`](crate::instance::Instance) export, or created from a Rust
 /// callback with [`Func::new_host`].
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Func {
     pub(crate) ptr: *mut sys::wasm_func_t,
     pub(crate) store_id: u64,

@@ -134,6 +134,26 @@ impl Store {
     }
 }
 
+/// Written out rather than derived. The store's six ownership registries are
+/// `Vec<*mut _>`, so a derived `Debug` would put dozens of raw addresses on one
+/// line — and what a reader wants from them is how much the store holds, not
+/// which pointers it holds. `id` stands in for `ptr`: it identifies the store
+/// and is what a cross-store use is checked against, so printing both would say
+/// the same thing twice.
+impl std::fmt::Debug for Store {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Store")
+            .field("id", &self.id)
+            .field("funcs", &self.funcs.len())
+            .field("instances", &self.instances.len())
+            .field("modules", &self.modules.len())
+            .field("memories", &self.memories.len())
+            .field("globals", &self.globals.len())
+            .field("tables", &self.tables.len())
+            .finish()
+    }
+}
+
 impl Drop for Store {
     /// Frees the store's objects children-first, then the store itself.
     ///
