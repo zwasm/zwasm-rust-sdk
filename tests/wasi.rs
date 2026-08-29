@@ -339,10 +339,8 @@ fn a_start_section_exit_surfaces_from_instantiation() {
     let mut store = store_with_wasi(&engine);
 
     let module = Module::new(&mut store, START_EXIT_WASM).unwrap();
-    // `Instance` has no Debug, so unwrap_err is unavailable here.
-    let err = Instance::new(&mut store, &module, &[])
-        .err()
-        .expect("instantiation should have failed");
+    let err =
+        Instance::new(&mut store, &module, &[]).expect_err("instantiation should have failed");
     assert!(
         matches!(err, Error::WasiExit { code: 7 }),
         "expected WasiExit {{ code: 7 }}, got {err:?}"
@@ -361,15 +359,13 @@ fn a_start_section_fault_after_an_exit_is_still_a_fault() {
     let mut store = store_with_wasi(&engine);
 
     let exiting = Module::new(&mut store, START_EXIT_WASM).unwrap();
-    let first = Instance::new(&mut store, &exiting, &[])
-        .err()
-        .expect("the start section should have exited");
+    let first =
+        Instance::new(&mut store, &exiting, &[]).expect_err("the start section should have exited");
     assert!(matches!(first, Error::WasiExit { code: 7 }), "{first:?}");
 
     let faulting = Module::new(&mut store, START_FAULT_WASM).unwrap();
     let second = Instance::new(&mut store, &faulting, &[])
-        .err()
-        .expect("the start section should have trapped");
+        .expect_err("the start section should have trapped");
     assert!(
         matches!(second, Error::Trap { .. }),
         "a start-section unreachable read back the earlier exit status: {second:?}"
