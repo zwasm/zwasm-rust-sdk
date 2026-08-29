@@ -14,7 +14,7 @@ use crate::{
 ///
 /// Unlike wasmtime, where a module belongs to an engine and can be instantiated
 /// in any store, the wasm-c-api ties a module to the store it was created in.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Module {
     pub(crate) ptr: *mut sys::wasm_module_t,
     pub(crate) store_id: u64,

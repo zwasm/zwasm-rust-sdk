@@ -12,7 +12,7 @@ use crate::{
 ///
 /// Element access (`wasm_table_get` and `wasm_table_set`) is not wrapped, because
 /// it works in terms of `wasm_ref_t`, which has no safe representation here yet.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Table {
     pub(crate) ptr: *mut sys::wasm_table_t,
     pub(crate) store_id: u64,

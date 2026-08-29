@@ -11,7 +11,7 @@ use crate::{
 ///
 /// A handle into a [`Store`]; the store owns the C instance and frees it on its
 /// own drop, so the handle is `Copy` and carries no destructor.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Instance {
     pub(crate) ptr: *mut sys::wasm_instance_t,
     module: *mut sys::wasm_module_t,
