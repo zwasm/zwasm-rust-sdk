@@ -13,6 +13,18 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=DOCS_RS");
 
+    // Emitting any `rerun-if-*` opts this script out of cargo's default "rerun
+    // when any file in the package changed", so the watched set has to be
+    // spelled out or nothing is watched at all. It mirrors the `include` list in
+    // Cargo.toml: both answer "what does building this crate depend on", so a
+    // change to one belongs in the other. Not `zwasm` wholesale — the build
+    // writes `zwasm/zig-pkg/` on a pin older than the lint split, which would
+    // dirty the tree it is watching and rebuild forever.
+    println!("cargo:rerun-if-changed=zwasm/build.zig");
+    println!("cargo:rerun-if-changed=zwasm/build.zig.zon");
+    println!("cargo:rerun-if-changed=zwasm/include");
+    println!("cargo:rerun-if-changed=zwasm/src");
+
     // docs.rs builds in an offline sandbox that has no Zig toolchain, so the zwasm C
     // library cannot be built there. rustdoc never links the native library, so we
     // generate bindings straight from the vendored headers and skip the Zig build.

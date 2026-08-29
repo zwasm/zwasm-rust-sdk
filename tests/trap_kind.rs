@@ -109,8 +109,11 @@ fn an_unknown_kind_round_trips() {
 
 // Each ZWASM_TRAP_* constant maps to the variant named after it. The numbers
 // come from the bindings rather than being written out again here, so bumping
-// the submodule to a zwasm that renumbers or adds a kind breaks this test
-// instead of silently mislabelling traps at runtime.
+// the submodule to a zwasm that renumbers a kind breaks this test instead of
+// silently mislabelling traps at runtime.
+//
+// A table cannot catch an *added* kind — it has nothing to compare against.
+// `every_kind_the_header_declares_has_a_variant` covers that half.
 #[test]
 fn every_constant_maps_to_the_variant_named_after_it() {
     use zwasm_sys as sys;
@@ -158,16 +161,56 @@ fn every_constant_maps_to_the_variant_named_after_it() {
             "ZWASM_TRAP_* constant {code} maps to the wrong variant"
         );
     }
+}
 
-    // And nothing in the documented range falls through to Unknown, which
-    // would mean the conversion lost a kind the header still defines.
-    let highest = pairs.iter().map(|&(c, _)| c).max().unwrap();
-    for code in 0..=highest {
-        assert!(
-            !matches!(TrapKind::from(code as i32), TrapKind::Unknown(_)),
-            "kind {code} is within the documented range but has no variant"
-        );
+/// The header is the authority on how many kinds exist, so the sweep reads it.
+///
+/// Bounding the sweep by the table above instead makes the check satisfy
+/// itself: when zwasm appends a kind, the old bound still passes and the new
+/// constant falls silently to `TrapKind::Unknown`. `ZWASM_TRAP_WASI_EXIT` (18)
+/// is the case that proved it — the whole suite stayed green while a clean WASI
+/// exit was reported as an unknown trap.
+#[test]
+fn every_kind_the_header_declares_has_a_variant() {
+    let header = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/zwasm-sys/zwasm/include/zwasm.h"
+    );
+    let text =
+        std::fs::read_to_string(header).unwrap_or_else(|e| panic!("cannot read {header}: {e}"));
+
+    let mut declared = Vec::new();
+    for line in text.lines() {
+        let Some(rest) = line.strip_prefix("#define ZWASM_TRAP_") else {
+            continue;
+        };
+        let mut parts = rest.split_whitespace();
+        let (Some(suffix), Some(value)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let value: i32 = value.parse().unwrap_or_else(|e| {
+            panic!("ZWASM_TRAP_{suffix} has a non-integer value {value:?}: {e}")
+        });
+        declared.push((suffix.to_string(), value));
     }
+
+    // A parse that silently matched nothing would pass for the wrong reason.
+    assert!(
+        !declared.is_empty(),
+        "no ZWASM_TRAP_* defines found in {header}"
+    );
+
+    let unmapped: Vec<String> = declared
+        .iter()
+        .filter(|(_, value)| matches!(TrapKind::from(*value), TrapKind::Unknown(_)))
+        .map(|(suffix, value)| format!("ZWASM_TRAP_{suffix} = {value}"))
+        .collect();
+
+    assert!(
+        unmapped.is_empty(),
+        "the header declares kinds TrapKind maps to Unknown: {}",
+        unmapped.join(", ")
+    );
 }
 
 // Failures that are not guest traps carry no kind.
