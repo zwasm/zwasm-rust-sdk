@@ -58,6 +58,18 @@ jobs:
       - name: Doc tests
         run: cargo test --doc -- --test-threads=1
 
+      # `cargo test --doc` runs the examples; it says nothing about the prose
+      # around them. A link to an item that was renamed, moved or is not public
+      # is a rustdoc warning, so without this it reaches docs.rs intact and the
+      # only reader who finds out is one who clicks it.
+      #
+      # `--workspace` because this repository has a root package: without it
+      # cargo documents zwasm-sdk alone and zwasm-sys is never looked at.
+      - name: Docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --all-features
+
   # The crate that reaches crates.io is not the working tree. `cargo package`
   # applies the `include` list, but on top of that it sweeps up every file named
   # README* or LICENSE* it finds anywhere in the package directory — including
