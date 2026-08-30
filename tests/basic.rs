@@ -137,7 +137,7 @@ fn test_call_wrong_results_len_is_an_error() {
     let instance = Instance::new(&mut store, &module, &[]).unwrap();
     let func = instance.get_func(&mut store, "f").unwrap();
 
-    let err = func.call(&mut store, &[], &mut []).err().unwrap();
+    let err = func.call(&mut store, &[], &mut []).unwrap_err();
     assert!(err.to_string().contains("results"));
 }
 
@@ -152,8 +152,7 @@ fn test_call_wrong_params_len_is_an_error() {
     let mut results = [Val::I32(0)];
     let err = func
         .call(&mut store, &[Val::I32(1)], &mut results)
-        .err()
-        .unwrap();
+        .unwrap_err();
     assert!(err.to_string().contains("parameters"));
 }
 
@@ -299,7 +298,7 @@ fn trap_error(wasm: &[u8]) -> Error {
     let func = instance.get_func(&mut store, "f").unwrap();
 
     let mut results = vec![Val::I32(0); func.result_arity(&store)];
-    let err = func.call(&mut store, &[], &mut results).err().unwrap();
+    let err = func.call(&mut store, &[], &mut results).unwrap_err();
     match err {
         Error::Trap { .. } => err,
         other => panic!("expected a trap, got {other:?}"),
@@ -389,15 +388,14 @@ fn a_direct_call_with_the_wrong_arity_is_refused() {
     let host_fn = new_add_one_host_func(&mut store);
 
     let mut results = [Val::I32(0)];
-    let err = host_fn.call(&mut store, &[], &mut results).err().unwrap();
+    let err = host_fn.call(&mut store, &[], &mut results).unwrap_err();
     assert!(err.to_string().contains("expected 1 parameters"), "{err}");
     assert_eq!(results, [Val::I32(0)], "results must be left untouched");
 
     let mut none: [Val; 0] = [];
     let err = host_fn
         .call(&mut store, &[Val::I32(41)], &mut none)
-        .err()
-        .unwrap();
+        .unwrap_err();
     assert!(err.to_string().contains("expected 1 results"), "{err}");
 }
 
@@ -413,7 +411,7 @@ fn a_trapping_call_leaves_results_alone() {
     let func = instance.get_func(&mut store, "f").unwrap();
 
     let mut results = [Val::I32(7)];
-    let err = func.call(&mut store, &[], &mut results).err().unwrap();
+    let err = func.call(&mut store, &[], &mut results).unwrap_err();
     assert!(matches!(err, Error::Trap { .. }));
     assert_eq!(results, [Val::I32(7)]);
 }

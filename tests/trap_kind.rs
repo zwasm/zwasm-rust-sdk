@@ -56,7 +56,7 @@ fn trap(wasm: &[u8]) -> Error {
     let func = instance.get_func(&mut store, "f").unwrap();
 
     let mut results = vec![Val::I32(0); func.result_arity(&store)];
-    func.call(&mut store, &[], &mut results).err().unwrap()
+    func.call(&mut store, &[], &mut results).unwrap_err()
 }
 
 fn kind(wasm: &[u8]) -> TrapKind {
@@ -219,8 +219,6 @@ fn every_kind_the_header_declares_has_a_variant() {
 fn a_non_trap_error_has_no_kind() {
     let engine = Engine::new().unwrap();
     let mut store = Store::new(&engine).unwrap();
-    let err = Module::new(&mut store, &[0x00, 0x00, 0x00, 0x00])
-        .err()
-        .unwrap();
+    let err = Module::new(&mut store, &[0x00, 0x00, 0x00, 0x00]).unwrap_err();
     assert_eq!(err.trap_kind(), None);
 }
