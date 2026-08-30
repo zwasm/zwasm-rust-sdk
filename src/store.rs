@@ -98,15 +98,10 @@ impl Store {
     /// that preopens per run should take a new store per configuration rather
     /// than re-setting this one, or the descriptors accumulate.
     ///
-    /// One thing degrades. After a replacement, an earlier instance's clean
-    /// `proc_exit` no longer reports the status it asked for: the guest writes
-    /// it to the host it bound, while the reader looks at the store's current
-    /// one. Measured on all three engines, such a call arrives as
-    /// [`Error::Trap`] carrying [`TrapKind::WasiExit`](crate::error::TrapKind::WasiExit) rather than as
-    /// [`Error::WasiExit`] — so the fact that it was a WASI exit survives, and
-    /// only the status is lost. Tracked upstream as
-    /// [zwasm#345](https://github.com/zwasm/zwasm/issues/345); when that lands,
-    /// the status comes back and this paragraph goes.
+    /// Exit statuses survive the change. A guest that ends through `proc_exit`
+    /// reports its status from whichever setup it was built under, so replacing
+    /// or detaching one neither hides an earlier instance's exit nor lets a
+    /// later instance's stand in for it.
     pub fn set_wasi(&mut self, config: WasiConfig) {
         let config = std::mem::ManuallyDrop::new(config);
         unsafe { sys::zwasm_store_set_wasi(self.ptr, config.ptr) }

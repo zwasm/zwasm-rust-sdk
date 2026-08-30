@@ -144,12 +144,9 @@ fn test_unset_wasi() {
 // reached released memory. zwasm/zwasm#314 retires the old host onto the store
 // instead, and this is the call that used to be the crash.
 //
-// It also pins what the replacement costs. The guest writes its exit status to
-// the host it bound at instantiation, while the reader looks at the store's
-// current one, so the status is invisible afterwards: the call arrives as a
-// trap that still carries TrapKind::WasiExit rather than as Error::WasiExit.
-// That is zwasm/zwasm#345, and this asserts today's behaviour rather than the
-// wanted one — when #345 lands, this test is what notices.
+// The replacement costs nothing else either. An exit reports its status from
+// the setup the instance was built under (zwasm/zwasm#345), so swapping the
+// store's does not hide it.
 #[test]
 fn an_instance_outlives_the_wasi_host_it_bound() {
     let engine = Engine::new().unwrap();
@@ -167,16 +164,12 @@ fn an_instance_outlives_the_wasi_host_it_bound() {
         .expect("no _start export");
     let err = start.call(&mut store, &[], &mut []).unwrap_err();
 
-    assert_eq!(
-        err.trap_kind(),
-        Some(TrapKind::WasiExit),
-        "the exit should still be recognisable as one: {err:?}"
-    );
     assert!(
-        matches!(err, Error::Trap { .. }),
-        "zwasm/zwasm#345 appears to be fixed — the status is readable again, so \
-         this test and the caveat on Store::set_wasi should become WasiExit: {err:?}"
+        matches!(err, Error::WasiExit { code: 0 }),
+        "the exit belongs to the host this instance bound, not the store's \
+         current one: {err:?}"
     );
+    assert_eq!(err.trap_kind(), Some(TrapKind::WasiExit));
 }
 
 // Replacing repeatedly retires each old config onto the store rather than
@@ -302,18 +295,15 @@ fn a_nonzero_exit_status_survives() {
     );
 }
 
-// A fault is a fault even where a clean exit came before it. zwasm/zwasm#341
-// used to break this: the status lived on the Store and was never cleared, so
-// an implementation asking "is a status readable" before "what kind of trap is
-// this" reported the fault below as a clean exit with code 0 — the value that
-// reads as success. That was measured here on 1bcc0edae across all three
-// engines before the fix.
+// A fault is a fault even where a clean exit came before it. zwasm keeps the
+// status on the Store and clears it on each call, so this reads back nothing
+// and reports the trap — but it was wrong twice on the way here: the status was
+// never cleared at all (zwasm/zwasm#341), and then it was read off the wrong
+// host (#345).
 //
-// The fix clears the status inside `wasm_func_call`, so this case no longer
-// separates the two orderings — it passes either way now, and is kept as the
-// behavioural assertion plus a guard against that clear regressing.
-// `a_start_section_fault_after_an_exit_is_still_a_fault` is what pins the
-// ordering, because instantiation is not a call and does not clear.
+// Both are fixed, so this no longer separates "ask the kind first" from "ask
+// for a status first" — it passes either way now. What it still does is hold
+// the clearing to its own claim, which is the half that has moved.
 #[test]
 fn a_fault_after_an_exit_in_the_same_store_is_still_a_fault() {
     let engine = Engine::new().unwrap();
@@ -347,12 +337,13 @@ fn a_start_section_exit_surfaces_from_instantiation() {
     );
 }
 
-// The clear that zwasm/zwasm#341 added sits in `wasm_func_call`, so two calls
-// no longer catch an implementation that asks "is a status readable" before
-// asking "what kind of trap is this". Instantiation is not a call: it neither
-// clears the status nor is covered by that fix, so a start-section exit
-// followed by a start-section fault still reaches the stale status. This is
-// the case that keeps the ordering pinned.
+// The same, one layer down: a start section runs during instantiation rather
+// than through a call. `wasi.h` says creating an instance clears the status
+// too, and this is that sentence checked from outside.
+//
+// It was written when instantiation did not clear, which made it the one case
+// that separated the two orderings. It no longer does. Kept because the claim
+// it checks is newer than the one above and has had less exposure.
 #[test]
 fn a_start_section_fault_after_an_exit_is_still_a_fault() {
     let engine = Engine::new().unwrap();

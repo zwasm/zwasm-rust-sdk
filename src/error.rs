@@ -1,5 +1,5 @@
 use thiserror::Error;
-use zwasm_sys::{self as sys};
+use zwasm_sys as sys;
 
 use crate::store::Store;
 
@@ -143,12 +143,19 @@ pub(crate) fn non_null<T>(ptr: *mut T, msg: &str) -> Result<*mut T, Error> {
 
 pub(crate) unsafe fn trap_to_error(trap: *mut sys::wasm_trap_t, store: &Store) -> Error {
     let kind = sys::zwasm_trap_kind(trap);
-    if kind == sys::ZWASM_TRAP_WASI_EXIT as i32 {
-        let mut code: u32 = 0;
-        if sys::zwasm_store_wasi_exit_code(store.ptr, &mut code) {
-            sys::wasm_trap_delete(trap);
-            return Error::WasiExit { code };
-        }
+
+    // A readable status is what separates a guest that ended itself from one
+    // that faulted; the kind only names the case and never carries the number,
+    // so one read answers both questions and `wasi.h` says to prefer it.
+    //
+    // Reading the kind first instead was a workaround, from when the status
+    // outlived the call that produced it. That is fixed (zwasm/zwasm#341, #345,
+    // #352), and the tests below hold zwasm to it rather than the SDK stepping
+    // around it.
+    let mut code: u32 = 0;
+    if sys::zwasm_store_wasi_exit_code(store.ptr, &mut code) {
+        sys::wasm_trap_delete(trap);
+        return Error::WasiExit { code };
     }
 
     let mut message = sys::wasm_message_t {

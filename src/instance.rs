@@ -1,4 +1,4 @@
-use zwasm_sys::{self as sys};
+use zwasm_sys as sys;
 
 use crate::{
     error::{non_null, trap_into_result, Error},

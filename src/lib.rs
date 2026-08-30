@@ -99,7 +99,7 @@
 //! built from the vendored submodule and linked statically, so nothing has to be
 //! installed on the target machine.
 
-use zwasm_sys::{self as sys};
+use zwasm_sys as sys;
 
 pub mod engine;
 pub mod error;
