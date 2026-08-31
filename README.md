@@ -16,6 +16,11 @@ The zwasm C library is built from the vendored submodule and linked statically, 
 Building it needs no network: zwasm's root package declares no dependencies, so
 `zig build static-lib` fetches nothing even on a cold Zig cache.
 
+Cross-compiling works through [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild):
+`cargo zigbuild --target <triple>` builds the C library for that target rather
+than for the build host. CI covers `aarch64-unknown-linux-musl` and
+`x86_64-unknown-linux-musl`.
+
 ## Version Compatibility
 
 | zwasm-sdk | zwasm-sys | zwasm C API |

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-08-31
 ### Changed
 - **Breaking.** Rewrote the SDK against zwasm 2.x. zwasm 2.0 replaced its custom C API with the standard [wasm-c-api](https://github.com/WebAssembly/wasm-c-api), so nothing from 0.1 carries over. `Module::new` no longer takes bytes alone, `Module::invoke` is gone, and `Config`, `Imports` and `CancelHandle` have no replacement yet
 - **Breaking.** The store owns everything. `Func`, `Global`, `Instance`, `Memory`, `Module` and `Table` are `Copy` handles with no destructor of their own; the methods on them borrow the store, and using one with a store it does not belong to panics rather than reaching freed memory. This follows wasmtime's model, and it is what makes the handles safe to hold: in the wasm-c-api every object is freed through the store, so nothing can outlive it
