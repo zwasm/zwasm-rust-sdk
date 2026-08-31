@@ -137,7 +137,7 @@ fn test_call_wrong_results_len_is_an_error() {
     let instance = Instance::new(&mut store, &module, &[]).unwrap();
     let func = instance.get_func(&mut store, "f").unwrap();
 
-    let err = func.call(&mut store, &[], &mut []).err().unwrap();
+    let err = func.call(&mut store, &[], &mut []).unwrap_err();
     assert!(err.to_string().contains("results"));
 }
 
@@ -152,8 +152,7 @@ fn test_call_wrong_params_len_is_an_error() {
     let mut results = [Val::I32(0)];
     let err = func
         .call(&mut store, &[Val::I32(1)], &mut results)
-        .err()
-        .unwrap();
+        .unwrap_err();
     assert!(err.to_string().contains("parameters"));
 }
 
@@ -299,7 +298,7 @@ fn trap_error(wasm: &[u8]) -> Error {
     let func = instance.get_func(&mut store, "f").unwrap();
 
     let mut results = vec![Val::I32(0); func.result_arity(&store)];
-    let err = func.call(&mut store, &[], &mut results).err().unwrap();
+    let err = func.call(&mut store, &[], &mut results).unwrap_err();
     match err {
         Error::Trap { .. } => err,
         other => panic!("expected a trap, got {other:?}"),
@@ -348,31 +347,56 @@ fn empty_named_export_does_not_poison_lookups() {
     f.call(&mut store, &[], &mut []).unwrap();
 }
 
-// zwasm's wasm_func_call returns null — "no trap", i.e. success — for a func
-// with no instance behind it ("handle.instance orelse return null",
-// src/api/instance.zig), so calling a host function directly used to report
-// success with untouched results and the callback never running. A host
-// function is only callable by a guest, through an import.
+// `wasm_func_call` used to return null — no trap, therefore success — for a
+// func with no instance behind it, without running the callback or writing
+// results. The caller read its own uninitialised buffer as a completed call, so
+// the SDK refused the call outright. zwasm/zwasm#315 made zwasm invoke the
+// callback instead, which is also what wasmtime does, and the refusal is gone.
 #[test]
-fn calling_a_host_function_directly_is_an_error() {
+fn a_host_function_can_be_called_directly() {
     let engine = Engine::new().unwrap();
     let mut store = Store::new(&engine).unwrap();
     let host_fn = new_add_one_host_func(&mut store);
 
     let mut results = [Val::I32(0)];
-    let err = host_fn
+    host_fn
         .call(&mut store, &[Val::I32(41)], &mut results)
-        .err()
         .unwrap();
-    assert!(err.to_string().contains("cannot be called directly"));
-    assert_eq!(results, [Val::I32(0)], "results must be left untouched");
+    assert_eq!(
+        results,
+        [Val::I32(42)],
+        "the callback should have run and written its result"
+    );
 
-    // The same function still works as an import.
+    // And it is still the same function an import reaches.
     let module = Module::new(&mut store, CALLBACK_WASM).unwrap();
     let instance = Instance::new(&mut store, &module, &[host_fn]).unwrap();
     let f = instance.get_func(&mut store, "f").unwrap();
+    results = [Val::I32(0)];
     f.call(&mut store, &[Val::I32(41)], &mut results).unwrap();
     assert_eq!(results, [Val::I32(42)]);
+}
+
+// The arity check is the SDK's own and runs before the call, so it answers for
+// a host function the same way it does for a guest one. zwasm traps on a
+// mismatch too, but with a binding error rather than a message naming the
+// arities.
+#[test]
+fn a_direct_call_with_the_wrong_arity_is_refused() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let host_fn = new_add_one_host_func(&mut store);
+
+    let mut results = [Val::I32(0)];
+    let err = host_fn.call(&mut store, &[], &mut results).unwrap_err();
+    assert!(err.to_string().contains("expected 1 parameters"), "{err}");
+    assert_eq!(results, [Val::I32(0)], "results must be left untouched");
+
+    let mut none: [Val; 0] = [];
+    let err = host_fn
+        .call(&mut store, &[Val::I32(41)], &mut none)
+        .unwrap_err();
+    assert!(err.to_string().contains("expected 1 results"), "{err}");
 }
 
 // call() writes results only on success. A trap returns before the write-back,
@@ -387,7 +411,7 @@ fn a_trapping_call_leaves_results_alone() {
     let func = instance.get_func(&mut store, "f").unwrap();
 
     let mut results = [Val::I32(7)];
-    let err = func.call(&mut store, &[], &mut results).err().unwrap();
+    let err = func.call(&mut store, &[], &mut results).unwrap_err();
     assert!(matches!(err, Error::Trap { .. }));
     assert_eq!(results, [Val::I32(7)]);
 }

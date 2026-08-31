@@ -83,54 +83,38 @@ impl Store {
     /// against it.
     ///
     /// The config is taken by value because the C side takes ownership of it.
-    /// Calling twice replaces the previous host and frees the old config.
+    /// Calling twice replaces the host an instantiation from here on will bind.
     ///
-    /// # Errors
+    /// # Replacing a host that instances already hold
     ///
-    /// Fails once anything has been instantiated in this store. zwasm captures a
-    /// raw pointer to the host in each import binding at instantiation time
-    /// (`.ctx = wasi_host_ptr`, `src/api/instance.zig`), and replacing the host
-    /// frees the old one immediately, so an existing instance would be left
-    /// calling into freed memory. Install the host before instantiating.
+    /// An instance binds the host it was created under, by address, and keeps
+    /// that one for the rest of its life. Replacing the host therefore changes
+    /// nothing for the instances that already exist — it only decides what the
+    /// next instantiation binds.
     ///
-    /// The refusal is permanent for the store's remaining life, and deliberately
-    /// blunt: only an instance that imports WASI captures the pointer, but the
-    /// store cannot see an instance's imports, so it refuses after any
-    /// instantiation. Use a fresh store for a different WASI configuration.
+    /// The replaced config is not freed. zwasm retires it onto the store and
+    /// frees it with the store, because those instances still hold its address,
+    /// and the directories it preopened stay open until then. A long-lived store
+    /// that preopens per run should take a new store per configuration rather
+    /// than re-setting this one, or the descriptors accumulate.
     ///
-    /// `config` is consumed either way — on the refusal path it is dropped and
-    /// its C object freed, rather than handed back in the error. Reaching the
-    /// refusal means the calls are in the wrong order, which is fixed by
-    /// restructuring rather than by retrying with the same config, and building
-    /// another one is cheap.
-    ///
-    /// The refusal is a workaround for the C API freeing a host that live
-    /// instances still point at, tracked upstream as
-    /// [zwasm#314](https://github.com/zwasm/zwasm/issues/314). If zwasm defers
-    /// the free until the store is deleted, replacing the host stops being
-    /// unsound and this refusal — along with the permanence it forces — can
-    /// go.
-    pub fn set_wasi(&mut self, config: WasiConfig) -> Result<(), Error> {
-        if !self.instances.is_empty() {
-            return Err(Error::Message("cannot change the WASI host after instantiating: an existing instance holds a pointer to it".to_string()));
-        }
+    /// Exit statuses survive the change. A guest that ends through `proc_exit`
+    /// reports its status from whichever setup it was built under, so replacing
+    /// or detaching one neither hides an earlier instance's exit nor lets a
+    /// later instance's stand in for it.
+    pub fn set_wasi(&mut self, config: WasiConfig) {
         let config = std::mem::ManuallyDrop::new(config);
-        unsafe { sys::zwasm_store_set_wasi(self.ptr, config.ptr) };
-        Ok(())
+        unsafe { sys::zwasm_store_set_wasi(self.ptr, config.ptr) }
     }
 
-    /// Removes the WASI host installed by [`Store::set_wasi`] and frees its config.
+    /// Detaches the WASI host, so a later instantiation resolves no
+    /// `wasi_snapshot_preview1.*` import.
     ///
-    /// # Errors
-    ///
-    /// Fails once anything has been instantiated in this store, for the reason
-    /// given on [`Store::set_wasi`].
-    pub fn unset_wasi(&mut self) -> Result<(), Error> {
-        if !self.instances.is_empty() {
-            return Err(Error::Message("cannot change the WASI host after instantiating: an existing instance holds a pointer to it".to_string()));
-        }
-        unsafe { sys::zwasm_store_set_wasi(self.ptr, std::ptr::null_mut()) };
-        Ok(())
+    /// Detaching is a replacement like any other: instances that already exist
+    /// keep the host they bound, the config is freed with the store rather than
+    /// here, and the exit-status caveat on [`Store::set_wasi`] applies.
+    pub fn unset_wasi(&mut self) {
+        unsafe { sys::zwasm_store_set_wasi(self.ptr, std::ptr::null_mut()) }
     }
 }
 

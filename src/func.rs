@@ -16,16 +16,25 @@ use crate::{
 pub struct Func {
     pub(crate) ptr: *mut sys::wasm_func_t,
     pub(crate) store_id: u64,
-    host: bool,
 }
 
 impl Func {
     /// Creates a host function the guest can call.
     ///
     /// The result is meant to be passed to
-    /// [`Instance::new`](crate::instance::Instance::new) as an import; a guest
-    /// then reaches the callback through it. Calling it directly with
-    /// [`Func::call`] is an error, because zwasm has no instance to run it in.
+    /// [`Instance::new`](crate::instance::Instance::new) as an import, so that a
+    /// guest reaches the callback through it. [`Func::call`] also works: zwasm
+    /// invokes the callback with no instance in between, as wasmtime does.
+    ///
+    /// Which way it is reached decides what a trap from the callback carries.
+    /// Called directly, the trap reaches the caller intact, message and all.
+    /// Reached through a guest import, zwasm consumes it and substitutes a
+    /// generic one — measured, both paths report
+    /// [`TrapKind::BindingError`](crate::error::TrapKind::BindingError), and
+    /// only the direct path keeps the callback's own message. Carrying the
+    /// callback's detail across the guest boundary would need a field zwasm
+    /// does not have (its ADR-0218), so this is a standing difference rather
+    /// than something waiting on a fix.
     ///
     /// # Safety
     ///
@@ -48,16 +57,7 @@ impl Func {
         Ok(Func {
             ptr: func,
             store_id: store.id,
-            host: true,
         })
-    }
-
-    pub(crate) fn from_export(ptr: *mut sys::wasm_func_t, store_id: u64) -> Self {
-        Func {
-            ptr,
-            store_id,
-            host: false,
-        }
     }
 
     pub fn param_arity(&self, store: &Store) -> usize {
@@ -83,18 +83,13 @@ impl Func {
     ///
     /// A guest trap is returned as [`Error::Trap`] carrying the trap message.
     ///
+    /// A function from [`Func::new_host`] can be called this way too, which
+    /// runs its callback directly with no instance in between. See there for
+    /// what a trap from the callback carries on each path.
+    ///
     /// # Errors
     ///
-    /// Fails when the arities do not match, and when `self` came from
-    /// [`Func::new_host`] — zwasm's `wasm_func_call` reports success without
-    /// running anything for a function with no instance behind it, so it is
-    /// refused here rather than returning a silent zero.
-    ///
-    /// The refusal is a workaround for that, tracked upstream as
-    /// [zwasm#315](https://github.com/zwasm/zwasm/issues/315). When
-    /// `wasm_func_call` either runs a host function or traps, this check and
-    /// the origin flag it reads both come out. Widening a call that used to
-    /// fail is not a breaking change.
+    /// Fails when the arities do not match.
     ///
     /// # Panics
     ///
@@ -106,10 +101,6 @@ impl Func {
         results: &mut [Val],
     ) -> Result<(), Error> {
         store.check(self.store_id);
-        if self.host {
-            return Err(Error::Message("a host function cannot be called directly; only a guest can call it, through an instance import".to_string()));
-        }
-
         let nparams = unsafe { sys::wasm_func_param_arity(self.ptr) };
         if params.len() != nparams {
             return Err(Error::Message(format!(
@@ -139,7 +130,7 @@ impl Func {
         };
 
         let trap = unsafe { sys::wasm_func_call(self.ptr, &params_vec, &mut results_vec) };
-        trap_into_result(trap)?;
+        trap_into_result(trap, store)?;
 
         for (slot, val) in results.iter_mut().zip(results_vals) {
             *slot = val.into();

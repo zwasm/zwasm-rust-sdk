@@ -1,6 +1,6 @@
 use std::{ffi::CString, os::raw::c_char};
 
-use zwasm_sys::{self as sys};
+use zwasm_sys as sys;
 
 use crate::error::{non_null, Error};
 

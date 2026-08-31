@@ -9,21 +9,18 @@ A recent stable Rust compiler is recommended. (Rust 2021 edition)
 ## Build and Platform Requirements
 
 - Requires [Zig](https://ziglang.org/) 0.16.0 in your PATH (used to build the zwasm C library)
-- Requires network access at build time — see below
 - Supported platforms: **Linux (x86_64, aarch64), macOS (x86_64, aarch64)**
 
 The zwasm C library is built from the vendored submodule and linked statically, so no shared library has to be installed on the machine that runs your binary.
 
-zwasm's `build.zig` imports its lint tool at the top level, so building the C
-library fetches that tool and its dependencies from GitHub on a cold cache.
-This is a property of the upstream build, not of this crate: an offline build
-or `cargo vendor --offline` will fail until zwasm makes the dependency lazy.
+Building it needs no network: zwasm's root package declares no dependencies, so
+`zig build static-lib` fetches nothing even on a cold Zig cache.
 
 ## Version Compatibility
 
 | zwasm-sdk | zwasm-sys | zwasm C API |
 |-----------|-----------|-------------|
-| 0.2.x     | 0.2.x     | 2.5.x       |
+| 0.2.x     | 0.2.x     | 2.6.x       |
 | 0.1.x     | 0.1.x     | 1.11.x      |
 
 zwasm 2.0 replaced the custom C API with the standard [wasm-c-api](https://github.com/WebAssembly/wasm-c-api), so 0.2 is a full rewrite with no path from 0.1. See [CHANGELOG.md](CHANGELOG.md).
@@ -85,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     wasi.preopen_dir("/host/dir", "/")?;
     wasi.inherit_stdio();
 
-    store.set_wasi(wasi)?;
+    store.set_wasi(wasi);
     Ok(())
 }
 ```
@@ -103,7 +100,7 @@ For low-level access, see [zwasm-sys](crates/zwasm-sys).
 ## API Reference
 
 - [API documentation on docs.rs](https://docs.rs/zwasm-sdk)
-- [zwasm C API documentation](https://github.com/zwasm/zwasm/blob/v2.5.0/docs/reference/c_api.md)
+- [zwasm C API documentation](https://github.com/zwasm/zwasm/blob/v2.6.0/docs/reference/c_api.md)
 
 ## License
 

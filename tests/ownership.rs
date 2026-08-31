@@ -196,11 +196,11 @@ fn global_set_checks_mutability_and_type() {
     let mut store = Store::new(&engine).unwrap();
 
     let immutable = Global::new(&mut store, Val::I32(1), false).unwrap();
-    let err = immutable.set(&mut store, Val::I32(2)).err().unwrap();
+    let err = immutable.set(&mut store, Val::I32(2)).unwrap_err();
     assert!(err.to_string().contains("immutable"));
 
     let mutable = Global::new(&mut store, Val::I32(1), true).unwrap();
-    let err = mutable.set(&mut store, Val::I64(2)).err().unwrap();
+    let err = mutable.set(&mut store, Val::I64(2)).unwrap_err();
     assert!(err.to_string().contains("type"));
 
     mutable.set(&mut store, Val::I32(5)).unwrap();

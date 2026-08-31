@@ -1,4 +1,4 @@
-use zwasm_sys::{self as sys};
+use zwasm_sys as sys;
 
 use crate::{
     error::{non_null, trap_into_result, Error},
@@ -53,7 +53,7 @@ impl Instance {
         let ptr =
             unsafe { sys::wasm_instance_new(store.ptr, module.ptr, &import_extern_vec, &mut trap) };
 
-        trap_into_result(trap)?;
+        trap_into_result(trap, store)?;
         let ptr = non_null(ptr, "failed to create instance")?;
         store.instances.push(ptr);
 
@@ -134,6 +134,9 @@ impl Instance {
         }
         store.funcs.push(ptr);
 
-        Some(Func::from_export(ptr, store.id))
+        Some(Func {
+            ptr,
+            store_id: store.id,
+        })
     }
 }

@@ -78,7 +78,7 @@
 //! wasi.preopen_dir("/host/dir", "/")?;
 //! wasi.inherit_stdio();
 //!
-//! store.set_wasi(wasi)?;
+//! store.set_wasi(wasi);
 //! # Ok(())
 //! # }
 //! ```
@@ -99,6 +99,8 @@
 //! built from the vendored submodule and linked statically, so nothing has to be
 //! installed on the target machine.
 
+use zwasm_sys as sys;
+
 pub mod engine;
 pub mod error;
 pub mod func;
@@ -110,3 +112,40 @@ pub mod store;
 pub mod table;
 pub mod val;
 pub mod wasi;
+
+/// The version of the zwasm C library this binary is linked against.
+///
+/// Not the version of this crate, which is `CARGO_PKG_VERSION` and moves
+/// independently: 0.2 of the SDK wraps 2.x of zwasm.
+///
+/// # This is a version, not a build identity
+///
+/// zwasm's `-Dwasm`, `-Dwasi` and `-Dengine` are compile-time options, and two
+/// builds of the same commit differing in all three return the same string
+/// (zwasm's ADR-0221). So `"2.6.0"` says which release the library was built
+/// from; it does not promise the library holds everything that release can do.
+/// Do not branch on it to decide whether a feature is present.
+///
+/// # Panics
+///
+/// When the C library breaks its own contract by returning NULL or a string
+/// that is not UTF-8. Neither is a condition a caller can act on.
+///
+/// Requires zwasm 2.6.0 or later; the symbol does not exist before it.
+pub fn runtime_version() -> &'static str {
+    let ptr = unsafe { sys::zwasm_version() };
+    assert!(
+        !ptr.is_null(),
+        "zwasm_version() returned NULL, which its header rules out"
+    );
+
+    // SAFETY: the pointer is non-null by the assertion above, and zwasm.h
+    // documents the string as static storage that is never freed — which is
+    // what makes the 'static in the return type sound rather than merely
+    // accepted by the compiler.
+    let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+
+    c_str
+        .to_str()
+        .expect("zwasm_version() returned a string that is not UTF-8")
+}
