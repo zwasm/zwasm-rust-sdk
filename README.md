@@ -20,7 +20,7 @@ Building it needs no network: zwasm's root package declares no dependencies, so
 
 | zwasm-sdk | zwasm-sys | zwasm C API |
 |-----------|-----------|-------------|
-| 0.2.x     | 0.2.x     | 2.5.x       |
+| 0.2.x     | 0.2.x     | 2.6.x       |
 | 0.1.x     | 0.1.x     | 1.11.x      |
 
 zwasm 2.0 replaced the custom C API with the standard [wasm-c-api](https://github.com/WebAssembly/wasm-c-api), so 0.2 is a full rewrite with no path from 0.1. See [CHANGELOG.md](CHANGELOG.md).
@@ -100,7 +100,7 @@ For low-level access, see [zwasm-sys](crates/zwasm-sys).
 ## API Reference
 
 - [API documentation on docs.rs](https://docs.rs/zwasm-sdk)
-- [zwasm C API documentation](https://github.com/zwasm/zwasm/blob/v2.5.0/docs/reference/c_api.md)
+- [zwasm C API documentation](https://github.com/zwasm/zwasm/blob/v2.6.0/docs/reference/c_api.md)
 
 ## License
 
