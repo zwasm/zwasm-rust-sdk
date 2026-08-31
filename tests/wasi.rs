@@ -1,9 +1,4 @@
-use zwasm_sdk::engine::Engine;
-use zwasm_sdk::error::{Error, TrapKind};
-use zwasm_sdk::instance::Instance;
-use zwasm_sdk::module::Module;
-use zwasm_sdk::store::Store;
-use zwasm_sdk::wasi::WasiConfig;
+use zwasm_sdk::{Engine, Error, Instance, Module, Store, TrapKind, WasiConfig};
 
 // (module
 //   (import "wasi_snapshot_preview1" "fd_write"

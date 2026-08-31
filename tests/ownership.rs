@@ -7,6 +7,9 @@
 //! `compile_fail` doctest on `Store` pins that), so the use-after-free class
 //! from issue #5 has no runtime test here — it cannot be written.
 
+// Deliberately on the module paths while every other test moved to the crate
+// root. Adding the root re-exports did not remove the longer paths, and this
+// file is what would stop compiling if a later change did.
 use zwasm_sdk::engine::Engine;
 use zwasm_sdk::func::Func;
 use zwasm_sdk::global::Global;

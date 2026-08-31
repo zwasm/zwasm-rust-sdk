@@ -1,16 +1,8 @@
 //! Every public type prints. Two of them print in a shape worth pinning.
 
-use zwasm_sdk::engine::Engine;
-use zwasm_sdk::error::{Error, TrapKind};
-use zwasm_sdk::func::Func;
-use zwasm_sdk::global::Global;
-use zwasm_sdk::instance::Instance;
-use zwasm_sdk::memory::Memory;
-use zwasm_sdk::module::Module;
-use zwasm_sdk::store::Store;
-use zwasm_sdk::table::Table;
-use zwasm_sdk::val::Val;
-use zwasm_sdk::wasi::WasiConfig;
+use zwasm_sdk::{
+    Engine, Error, Func, Global, Instance, Memory, Module, Store, Table, TrapKind, Val, WasiConfig,
+};
 
 // (module (func (export "f")))
 const EMPTY_WASM: &[u8] = &[

@@ -5,7 +5,7 @@
 //!
 //! The types map onto the [wasm-c-api](https://github.com/WebAssembly/wasm-c-api)
 //! object model that zwasm 2.x exposes, and the ownership model follows
-//! [wasmtime](https://docs.rs/wasmtime): the [`Store`](store::Store) owns every
+//! [wasmtime](https://docs.rs/wasmtime): the [`Store`] owns every
 //! object created through it, and the other types are `Copy` handles naming an
 //! object inside a store. Using a handle means passing the store back in, so the
 //! borrow checker keeps every use inside the store's lifetime, and a handle used
@@ -13,14 +13,14 @@
 //!
 //! | Type | C type | Role |
 //! |------|--------|------|
-//! | [`Engine`](engine::Engine) | `wasm_engine_t` | Compilation environment; `Clone + Send + Sync` |
-//! | [`Store`](store::Store) | `wasm_store_t` | Owns the runtime state for one thread |
-//! | [`Module`](module::Module) | `wasm_module_t` | A validated module |
-//! | [`Instance`](instance::Instance) | `wasm_instance_t` | An instantiated module |
-//! | [`Func`](func::Func) | `wasm_func_t` | A callable function |
-//! | [`Val`](val::Val) | `wasm_val_t` | An i32/i64/f32/f64 value |
-//! | [`Memory`](memory::Memory), [`Global`](global::Global), [`Table`](table::Table) | `wasm_memory_t`, ... | Runtime entities |
-//! | [`WasiConfig`](wasi::WasiConfig) | `zwasm_wasi_config_t` | WASI 0.1 host setup |
+//! | [`Engine`] | `wasm_engine_t` | Compilation environment; `Clone + Send + Sync` |
+//! | [`Store`] | `wasm_store_t` | Owns the runtime state for one thread |
+//! | [`Module`] | `wasm_module_t` | A validated module |
+//! | [`Instance`] | `wasm_instance_t` | An instantiated module |
+//! | [`Func`] | `wasm_func_t` | A callable function |
+//! | [`Val`] | `wasm_val_t` | An i32/i64/f32/f64 value |
+//! | [`Memory`], [`Global`], [`Table`] | `wasm_memory_t`, ... | Runtime entities |
+//! | [`WasiConfig`] | `zwasm_wasi_config_t` | WASI 0.1 host setup |
 //!
 //! The store frees everything on drop — children before parents, then the C store,
 //! then its reference to the engine. zwasm resolves every deallocation through
@@ -30,11 +30,7 @@
 //! ## Example
 //!
 //! ```
-//! use zwasm_sdk::engine::Engine;
-//! use zwasm_sdk::instance::Instance;
-//! use zwasm_sdk::module::Module;
-//! use zwasm_sdk::store::Store;
-//! use zwasm_sdk::val::Val;
+//! use zwasm_sdk::{Engine, Instance, Module, Store, Val};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // (module (func (export "add") (param i32 i32) (result i32)
@@ -60,13 +56,11 @@
 //!
 //! ## WASI
 //!
-//! Build a [`WasiConfig`](wasi::WasiConfig) and install it on the store before
+//! Build a [`WasiConfig`] and install it on the store before
 //! instantiating. The store takes ownership of the config, so it is passed by value.
 //!
 //! ```no_run
-//! use zwasm_sdk::engine::Engine;
-//! use zwasm_sdk::store::Store;
-//! use zwasm_sdk::wasi::WasiConfig;
+//! use zwasm_sdk::{Engine, Store, WasiConfig};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let engine = Engine::new()?;
@@ -112,6 +106,24 @@ pub mod store;
 pub mod table;
 pub mod val;
 pub mod wasi;
+
+// Every public type is also reachable from the crate root, which is how
+// wasmtime presents its own — `use zwasm_sdk::{Engine, Store}` rather than one
+// line per module. The modules stay public so that the longer paths, and the
+// `crate::store::Store` links in these docs, keep working.
+//
+// A new public type belongs here as well as in its module.
+pub use crate::engine::Engine;
+pub use crate::error::{Error, TrapKind};
+pub use crate::func::Func;
+pub use crate::global::Global;
+pub use crate::instance::Instance;
+pub use crate::memory::Memory;
+pub use crate::module::Module;
+pub use crate::store::Store;
+pub use crate::table::Table;
+pub use crate::val::Val;
+pub use crate::wasi::WasiConfig;
 
 /// The version of the zwasm C library this binary is linked against.
 ///
