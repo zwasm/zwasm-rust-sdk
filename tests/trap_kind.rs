@@ -5,12 +5,7 @@
 //! Every kind asserted here was measured against zwasm 2.5.0 through
 //! `zwasm_trap_kind`, so these pin the mapping rather than restating it.
 
-use zwasm_sdk::engine::Engine;
-use zwasm_sdk::error::{Error, TrapKind};
-use zwasm_sdk::instance::Instance;
-use zwasm_sdk::module::Module;
-use zwasm_sdk::store::Store;
-use zwasm_sdk::val::Val;
+use zwasm_sdk::{Engine, Error, Instance, Module, Store, TrapKind, Val};
 
 // (module (func (export "f") unreachable))
 const UNREACHABLE_WASM: &[u8] = &[

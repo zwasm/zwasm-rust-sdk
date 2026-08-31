@@ -1,10 +1,4 @@
-use zwasm_sdk::engine::Engine;
-use zwasm_sdk::error::Error;
-use zwasm_sdk::func::Func;
-use zwasm_sdk::instance::Instance;
-use zwasm_sdk::module::Module;
-use zwasm_sdk::store::Store;
-use zwasm_sdk::val::Val;
+use zwasm_sdk::{Engine, Error, Func, Instance, Module, Store, Val};
 
 // (func (export "f") (result i32) (i32.const 42))
 const RETURN42_WASM: &[u8] = &[

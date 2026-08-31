@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - `Error::WasiExit { code }`, the status a WASI guest passed to `proc_exit`. A WASI command reaches `proc_exit` even when it succeeds, so this is the ordinary end of a successful run and `code` is what says which it was — wasmtime reports the same event as `I32Exit`
 - `runtime_version()`, the semver of the linked zwasm. Not this crate's version, and not a build identity: zwasm's compile-time options do not appear in it, so nothing should branch on it to decide whether a feature is present
 - `Debug` on every public type, per the Rust API guidelines
+- Every public type is re-exported from the crate root, so `use zwasm_sdk::{Engine, Store, Module}` replaces one `use` line per module. The modules stay public and the longer paths keep working
 - Cross-compilation. `cargo zigbuild --target <triple>` builds the C library for the target rather than the host; `aarch64-unknown-linux-musl` and `x86_64-unknown-linux-musl` are covered in CI
 
 ### Fixed

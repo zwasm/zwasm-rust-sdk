@@ -6,12 +6,7 @@
 //!
 //! Kept in sync by hand. If these stop matching the README, fix the README.
 
-use zwasm_sdk::engine::Engine;
-use zwasm_sdk::instance::Instance;
-use zwasm_sdk::module::Module;
-use zwasm_sdk::store::Store;
-use zwasm_sdk::val::Val;
-use zwasm_sdk::wasi::WasiConfig;
+use zwasm_sdk::{Engine, Instance, Module, Store, Val, WasiConfig};
 
 // (module (func (export "add") (param i32 i32) (result i32)
 //   (i32.add (local.get 0) (local.get 1))))

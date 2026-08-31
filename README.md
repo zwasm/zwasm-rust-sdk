@@ -42,11 +42,7 @@ zwasm-sdk = "0.2"
 ## Example
 
 ```rust
-use zwasm_sdk::engine::Engine;
-use zwasm_sdk::instance::Instance;
-use zwasm_sdk::module::Module;
-use zwasm_sdk::store::Store;
-use zwasm_sdk::val::Val;
+use zwasm_sdk::{Engine, Instance, Module, Store, Val};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wasm = std::fs::read("your_module.wasm")?;
@@ -73,9 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Build a `WasiConfig` and install it on the store before instantiating. The store takes ownership of the config, so it is passed by value.
 
 ```rust
-use zwasm_sdk::engine::Engine;
-use zwasm_sdk::store::Store;
-use zwasm_sdk::wasi::WasiConfig;
+use zwasm_sdk::{Engine, Store, WasiConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let engine = Engine::new()?;
