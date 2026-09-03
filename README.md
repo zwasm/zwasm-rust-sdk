@@ -21,6 +21,17 @@ Cross-compiling works through [cargo-zigbuild](https://github.com/rust-cross/car
 than for the build host. CI covers `aarch64-unknown-linux-musl` and
 `x86_64-unknown-linux-musl`.
 
+A glibc version on the target — `--target x86_64-unknown-linux-gnu.2.28` — is
+honoured with cargo-zigbuild 0.23.4 or later, which exports the resolved target
+for build scripts to read. On older versions the C library is built for
+whatever glibc Zig defaults to, while the link step targets the version asked
+for.
+
+`ZWASM_ZIG_TARGET` overrides the target handed to Zig outright, for anything
+`-Dtarget` accepts — a glibc floor, CPU features, an ABI variant. It takes
+precedence over everything above, and is the way to reach a floor below Zig's
+default without cargo-zigbuild.
+
 ## Version Compatibility
 
 | zwasm-sdk | zwasm-sys | zwasm C API |
