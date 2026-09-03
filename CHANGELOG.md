@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Added
+- The Zig target can be set with `ZWASM_ZIG_TARGET`, and is otherwise taken from `CARGO_ZIGBUILD_TARGET_<target>` or `CARGO_ZIGBUILD_TARGET` when cargo-zigbuild 0.23.4 or later exports them. Without any of these the triple is computed as before, so a build that sets nothing is unchanged. This is what lets a build ask for a glibc floor: the version in `--target x86_64-unknown-linux-gnu.2.28` never reached the C half before, so it was built for whatever glibc Zig defaults to
+
 ## [0.2.0] - 2026-08-31
 ### Changed
 - **Breaking.** Rewrote the SDK against zwasm 2.x. zwasm 2.0 replaced its custom C API with the standard [wasm-c-api](https://github.com/WebAssembly/wasm-c-api), so nothing from 0.1 carries over. `Module::new` no longer takes bytes alone, `Module::invoke` is gone, and `Config`, `Imports` and `CancelHandle` have no replacement yet

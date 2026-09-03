@@ -10,8 +10,13 @@ fn main() {
     let zwasm_src_dir = env::current_dir()
         .expect("Failed to get current dir")
         .join("zwasm");
+    let target = std::env::var("TARGET").expect("TARGET not set");
+    let env_target = target.replace('-', "_");
 
     println!("cargo:rerun-if-env-changed=DOCS_RS");
+    println!("cargo:rerun-if-env-changed=ZWASM_ZIG_TARGET");
+    println!("cargo:rerun-if-env-changed=CARGO_ZIGBUILD_TARGET");
+    println!("cargo:rerun-if-env-changed=CARGO_ZIGBUILD_TARGET_{env_target}");
 
     // Emitting any `rerun-if-*` opts this script out of cargo's default "rerun
     // when any file in the package changed", so the watched set has to be
@@ -31,7 +36,66 @@ fn main() {
     let zwasm_include_dir = if env::var_os("DOCS_RS").is_some() {
         zwasm_src_dir.join("include")
     } else {
-        build_zwasm(&out_dir, &zwasm_src_dir)
+        // Where the Zig target comes from, most specific first.
+        //
+        // `ZWASM_ZIG_TARGET` is the escape hatch: `-Dtarget` takes anything Zig
+        // understands — CPU features and ABI variants as well as glibc versions
+        // — and this crate deliberately models none of it.
+        //
+        // The `CARGO_ZIGBUILD_*` pair is what cargo-zigbuild exports (0.23.4 and
+        // later). A versioned target like `x86_64-unknown-linux-gnu.2.36` never
+        // reaches a build script: cargo-zigbuild strips the suffix before cargo
+        // runs, so `TARGET` and `CARGO_CFG_TARGET_*` all lose it, and it
+        // survives only inside the `CC_<target>` wrapper. Reading these is how
+        // the C half of the build learns the floor the link step was given.
+        // The suffixed name comes first because the bare one is set only when a
+        // single `--target` is given.
+        //
+        // Empty is not a value. An exported-but-empty variable falls through to
+        // the next candidate rather than producing `-Dtarget=`, which Zig
+        // rejects with a message that names none of this.
+        //
+        // The computed triple below is the default, unchanged: with no variable
+        // set, this builds exactly what it built before.
+        //
+        // Zig's triple is `<arch>-<os>-<abi>`, and the names are Rust's, taken
+        // verbatim. That holds for every platform this crate claims — Linux and
+        // macOS on x86_64 and aarch64 — but the two vocabularies are not
+        // identical, and where they part the result is a valid triple for the
+        // wrong thing rather than an error.
+        //
+        // `armv7-unknown-linux-gnueabihf` is the case to have in mind: Rust
+        // splits the ABI across `CARGO_CFG_TARGET_ENV` (`gnu`) and
+        // `CARGO_CFG_TARGET_ABI` (`eabihf`), so reading only the former yields
+        // `arm-linux-gnu` where Zig wants `arm-linux-gnueabihf`. Zig accepts
+        // both, and builds soft-float for the first. Check the mapping before
+        // adding a platform.
+        let triple = env::var("ZWASM_ZIG_TARGET")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .or_else(|| {
+                env::var(format!("CARGO_ZIGBUILD_TARGET_{env_target}"))
+                    .ok()
+                    .filter(|v| !v.is_empty())
+            })
+            .or_else(|| {
+                env::var("CARGO_ZIGBUILD_TARGET")
+                    .ok()
+                    .filter(|v| !v.is_empty())
+            })
+            .unwrap_or_else(|| {
+                let arch =
+                    env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH not set");
+                let os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not set");
+                let abi = env::var("CARGO_CFG_TARGET_ENV").expect("CARGO_CFG_TARGET_ENV not set");
+                if abi.is_empty() {
+                    format!("{arch}-{os}")
+                } else {
+                    format!("{arch}-{os}-{abi}")
+                }
+            });
+
+        build_zwasm(&out_dir, &zwasm_src_dir, &triple)
     };
 
     for header in HEADERS {
@@ -52,7 +116,6 @@ fn main() {
     fs::write(&wrapper, "#include \"zwasm.h\"\n#include \"wasi.h\"\n")
         .expect("Failed to write wrapper.h");
 
-    let target = std::env::var("TARGET").expect("TARGET not set");
     let bindings = bindgen::Builder::default()
         .header(wrapper.to_str().unwrap())
         .clang_arg(format!("-I{}", zwasm_include_dir.display()))
@@ -74,7 +137,7 @@ fn main() {
 
 /// Builds the zwasm C library with Zig, emits the link directives, and returns the
 /// path to the installed public header directory.
-fn build_zwasm(out_dir: &Path, zwasm_src_dir: &Path) -> PathBuf {
+fn build_zwasm(out_dir: &Path, zwasm_src_dir: &Path, triple: &str) -> PathBuf {
     let zig_local_cache_dir = out_dir.join("zig-local-cache");
     let zig_global_cache_dir = out_dir.join("zig-global-cache");
     let zig_install_prefix = out_dir.join("zig-install");
@@ -99,28 +162,6 @@ fn build_zwasm(out_dir: &Path, zwasm_src_dir: &Path) -> PathBuf {
     // Building for the host's CPU means setting it on both sides: `-C
     // target-cpu=native` for rustc and `-Dcpu=native` here. Doing one alone
     // achieves nothing, and doing both gives up portability of the result.
-    //
-    // Zig's triple is `<arch>-<os>-<abi>`, and the names below are Rust's, taken
-    // verbatim. That holds for every platform this crate claims — Linux and
-    // macOS on x86_64 and aarch64 — but the two vocabularies are not identical,
-    // and where they part the result is a valid triple for the wrong thing
-    // rather than an error.
-    //
-    // `armv7-unknown-linux-gnueabihf` is the case to have in mind: Rust splits
-    // the ABI across `CARGO_CFG_TARGET_ENV` (`gnu`) and `CARGO_CFG_TARGET_ABI`
-    // (`eabihf`), so reading only the former yields `arm-linux-gnu` where Zig
-    // wants `arm-linux-gnueabihf`. Zig accepts both, and builds soft-float for
-    // the first. Check the mapping before adding a platform.
-    let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH not set");
-    let os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not set");
-    let abi = env::var("CARGO_CFG_TARGET_ENV").expect("CARGO_CFG_TARGET_ENV not set");
-    let triple = if abi.is_empty() {
-        format!("{arch}-{os}")
-    } else {
-        format!("{arch}-{os}-{abi}")
-    };
-
-    // Build zwasm C library using zig
     let status = Command::new("zig")
         .current_dir(zwasm_src_dir)
         .env("ZIG_LOCAL_CACHE_DIR", &zig_local_cache_dir)
