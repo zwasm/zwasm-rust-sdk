@@ -63,6 +63,21 @@ pub enum TrapKind {
     /// wasmtime has no trap code for this: it surfaces the same event as an
     /// `I32Exit` error carrying the status, not as a trap.
     WasiExit,
+    /// `ZWASM_TRAP_INVALID_MODULE`. The JIT judged the module invalid, by a
+    /// check the front-end validator does not make yet.
+    ///
+    /// Not a guest fault: nothing ran. It arrives from instantiation rather
+    /// than from a call, and `AUTO` does not fall back to the interpreter for
+    /// it — a module refused here is refused on the stock engine. The message
+    /// names the verdict.
+    InvalidModule,
+    /// `ZWASM_TRAP_UNSUPPORTED`. The engine running this instance has no
+    /// implementation for the shape of this call.
+    ///
+    /// Neither a guest fault nor a binding error, and `AUTO` does not retry on
+    /// the interpreter at call time, so a different engine choice does not fix
+    /// it at the point it appears. The message names the shape.
+    Unsupported,
     /// A kind this crate does not know about.
     ///
     /// Reached when the linked zwasm reports a kind added after this crate's
@@ -93,6 +108,8 @@ impl From<i32> for TrapKind {
             16 => TrapKind::Interrupted,
             17 => TrapKind::OutOfFuel,
             18 => TrapKind::WasiExit,
+            19 => TrapKind::InvalidModule,
+            20 => TrapKind::Unsupported,
             other => TrapKind::Unknown(other),
         }
     }
@@ -166,11 +183,11 @@ pub(crate) unsafe fn trap_to_error(trap: *mut sys::wasm_trap_t, store: &Store) -
     let msg = if message.data.is_null() {
         "trap with no message".to_string()
     } else {
-        String::from_utf8_lossy(std::slice::from_raw_parts(
-            message.data as *const u8,
-            message.size,
-        ))
-        .to_string()
+        // `wasm.h` counts the terminator in `size`, so the last byte is
+        // dropped rather than shown. Asked rather than subtracted because an
+        // unconditional `size - 1` would wrap on an empty message.
+        let bytes = std::slice::from_raw_parts(message.data as *const u8, message.size);
+        String::from_utf8_lossy(bytes.strip_suffix(&[0]).unwrap_or(bytes)).into_owned()
     };
     sys::wasm_byte_vec_delete(&mut message);
     sys::wasm_trap_delete(trap);

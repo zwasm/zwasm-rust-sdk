@@ -93,16 +93,6 @@ fn store_drop_frees_everything() {
     drop(store);
 }
 
-fn assert_send_sync<T: Send + Sync>() {}
-
-// The engine holds no per-store state, so unlike everything else here it
-// crosses threads. Nothing else in the suite would notice if that stopped
-// being true, because the store-derived types are all !Send by construction.
-#[test]
-fn engine_is_send_and_sync() {
-    assert_send_sync::<Engine>();
-}
-
 // The engine is kept alive by the store's own clone, so the caller's Engine
 // values can all be dropped while stores still use it.
 #[test]

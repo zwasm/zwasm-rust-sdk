@@ -13,7 +13,7 @@
 //!
 //! | Type | C type | Role |
 //! |------|--------|------|
-//! | [`Engine`] | `wasm_engine_t` | Compilation environment; `Clone + Send + Sync` |
+//! | [`Engine`] | `wasm_engine_t` | Compilation environment; `Clone`, one thread per process |
 //! | [`Store`] | `wasm_store_t` | Owns the runtime state for one thread |
 //! | [`Module`] | `wasm_module_t` | A validated module |
 //! | [`Instance`] | `wasm_instance_t` | An instantiated module |

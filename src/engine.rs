@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::rc::Rc;
 
 use zwasm_sys as sys;
 
@@ -16,13 +16,31 @@ impl Drop for EngineInner {
     }
 }
 
-unsafe impl Send for EngineInner {}
-unsafe impl Sync for EngineInner {}
-
 /// A compilation and runtime environment, wrapping `wasm_engine_t`.
 ///
-/// One engine can back any number of [`Store`](crate::store::Store)s. It holds no
-/// per-instance state, so it is `Send + Sync` and can be shared across threads.
+/// One engine can back any number of [`Store`](crate::store::Store)s.
+///
+/// # One thread per process
+///
+/// An `Engine` is neither `Send` nor `Sync`, and the reason is stronger than it
+/// looks. zwasm's engine is single-threaded per *process*, not per store: its
+/// stores share process-global state — among it the table the exception
+/// unwinder consults to find which instance owns a frame — so a second thread
+/// deleting a store can free memory a call on the first is still reading, even
+/// though the two share no handle. `include/zwasm.h` states this.
+///
+/// Keeping the handle off other threads is therefore necessary but not
+/// sufficient: two engines created independently on two threads are no safer
+/// than one shared between them. Nothing in this crate prevents that yet.
+///
+/// ```compile_fail
+/// # use zwasm_sdk::Engine;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let engine = Engine::new()?;
+/// std::thread::spawn(move || drop(engine)); // error: `Engine` cannot be sent between threads
+/// # Ok(())
+/// # }
+/// ```
 ///
 /// `Clone` is shallow: clones share one `wasm_engine_t`, and the C engine is
 /// deleted only when the last of them is gone. Every store keeps a clone, so an
@@ -31,7 +49,7 @@ unsafe impl Sync for EngineInner {}
 /// engine outliving its stores a requirement of the C API, not a convenience.
 #[derive(Clone)]
 pub struct Engine {
-    inner: Arc<EngineInner>,
+    inner: Rc<EngineInner>,
 }
 
 impl Engine {
@@ -41,7 +59,7 @@ impl Engine {
     pub fn new() -> Result<Self, Error> {
         let ptr = non_null(unsafe { sys::wasm_engine_new() }, "failed to create engine")?;
         Ok(Engine {
-            inner: Arc::new(EngineInner { ptr }),
+            inner: Rc::new(EngineInner { ptr }),
         })
     }
 
@@ -59,7 +77,7 @@ impl Default for Engine {
     }
 }
 
-/// Written out rather than derived: the field is an `Arc<EngineInner>`, so
+/// Written out rather than derived: the field is an `Rc<EngineInner>`, so
 /// deriving would need `EngineInner: Debug` and would nest one struct inside
 /// another to say one thing.
 ///
