@@ -44,22 +44,33 @@ pub enum EngineKind {
     ///
     /// Reached when the linked zwasm reports a kind added after this crate's
     /// conversion was written — a bumped submodule, say. Carrying the value
-    /// keeps that from being a panic.
+    /// keeps that from being a panic, and lets the kind be handed back to
+    /// [`Instance::new_with_engine`], where that zwasm does know it.
+    ///
+    /// Asking for one zwasm does *not* know is not an error there: it maps any
+    /// unrecognized byte to [`Auto`](Self::Auto) rather than refusing, which
+    /// its C header does not say (zwasm/zwasm#459). So a kind this crate
+    /// invented, rather than read back, is a silent `Auto`.
     Unknown(i32),
 }
 
 impl EngineKind {
-    /// The `engine_kind` byte `zwasm_instance_new_ex` takes.
+    /// The `engine_kind` byte `zwasm_instance_new_ex` takes, or `None` for an
+    /// `Unknown` that does not fit one.
     ///
-    /// `Unknown` is passed through rather than rejected, so a kind read back
-    /// from [`Instance::engine`] can be handed to [`Instance::new_with_engine`]
-    /// again. zwasm decides what it means.
-    pub(crate) fn as_raw(self) -> u8 {
+    /// `Unknown` is carried through rather than rejected, so a kind read back
+    /// from [`Instance::engine`] reaches a zwasm that knows it even when this
+    /// crate's table does not. Truncating one that does not fit would not be a
+    /// weaker version of that: `256` would ask for `Auto` and `-255` for `Jit`,
+    /// so a value this crate cannot express would silently become a *different*
+    /// engine. zwasm cannot catch it either — an unrecognized byte is `Auto`
+    /// there, not a refusal (zwasm/zwasm#459).
+    pub(crate) fn as_raw(self) -> Option<u8> {
         match self {
-            EngineKind::Auto => 0,
-            EngineKind::Jit => 1,
-            EngineKind::Interp => 2,
-            EngineKind::Unknown(other) => other as u8,
+            EngineKind::Auto => Some(0),
+            EngineKind::Jit => Some(1),
+            EngineKind::Interp => Some(2),
+            EngineKind::Unknown(other) => u8::try_from(other).ok(),
         }
     }
 }
@@ -116,6 +127,10 @@ impl Instance {
     ///
     /// # Errors
     ///
+    /// An [`EngineKind::Unknown`] carrying a value that does not fit the byte
+    /// the C entry point takes fails with [`Error::Message`] before zwasm is
+    /// called at all, because truncating it would ask for a different engine.
+    ///
     /// A module the chosen engine *declines* fails with [`Error::Message`]
     /// naming the engine that was asked for. zwasm reports a decline as a null
     /// instance with no trap and no reason, so the engine is the only thing
@@ -146,6 +161,9 @@ impl Instance {
             size: import_externs.len(),
             data: import_externs.as_ptr() as *mut _,
         };
+        let engine_kind = engine.as_raw().ok_or_else(|| {
+            Error::Message(format!("{engine:?} is not a selector zwasm can be given"))
+        })?;
         let mut trap: *mut sys::wasm_trap_t = std::ptr::null_mut();
         let ptr = unsafe {
             sys::zwasm_instance_new_ex(
@@ -153,7 +171,7 @@ impl Instance {
                 module.ptr,
                 &import_extern_vec,
                 &mut trap,
-                engine.as_raw(),
+                engine_kind,
             )
         };
 

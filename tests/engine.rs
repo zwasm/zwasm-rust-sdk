@@ -62,6 +62,34 @@ fn an_unknown_kind_round_trips() {
     assert_eq!(EngineKind::from(99), EngineKind::Unknown(99));
 }
 
+// `Unknown` reaches C as-is so that a kind read back from a newer zwasm can be
+// handed straight back to it. Only a value that does not fit the byte the C
+// entry point takes is refused — truncation would not be a lossy version of
+// the same request, it would be a different engine: 256 asks for AUTO and -255
+// for JIT. zwasm cannot catch either, because an unrecognized byte is AUTO
+// there rather than a refusal (zwasm/zwasm#459).
+#[test]
+fn an_unknown_kind_that_does_not_fit_a_byte_is_refused() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let module = Module::new(&mut store, WASM).unwrap();
+
+    for kind in [EngineKind::Unknown(256), EngineKind::Unknown(-255)] {
+        let err = Instance::new_with_engine(&mut store, &module, &[], kind)
+            .expect_err("a selector that does not fit a byte has to be refused");
+        assert!(
+            err.to_string()
+                .contains("is not a selector zwasm can be given"),
+            "unexpected message for {kind:?}: {err}"
+        );
+    }
+
+    // One that does fit still goes through, which is the case the pass-through
+    // exists for.
+    Instance::new_with_engine(&mut store, &module, &[], EngineKind::Unknown(3))
+        .expect("a byte-sized unknown kind is zwasm's to interpret");
+}
+
 // Each ZWASM_ENGINE_* constant maps to the variant named after it. The numbers
 // come from the bindings rather than being written out again, so bumping the
 // submodule to a zwasm that renumbers a kind breaks this instead of silently
