@@ -10,9 +10,8 @@ use crate::{
 /// Which engine runs one instance, mirroring `ZWASM_ENGINE_*` in zwasm's
 /// `include/zwasm.h`.
 ///
-/// Not [`Engine`](crate::engine::Engine), which is `wasm_engine_t` — the
-/// compilation environment a [`Store`] is built on. This names the executor
-/// behind a single `Instance`.
+/// Not [`Engine`](crate::engine::Engine) — that is `wasm_engine_t`, the
+/// environment a [`Store`] is built on. This names one instance's executor.
 ///
 /// [`Auto`](Self::Auto) is a request; [`Instance::engine`] is the answer, and
 /// it never reports `Auto`.
@@ -25,8 +24,7 @@ pub enum EngineKind {
     /// `ZWASM_ENGINE_AUTO`, what stock `wasm_instance_new` passes.
     ///
     /// Compiles the module with the JIT, and instantiates the interpreter only
-    /// for a module the JIT *declines* — an import it cannot satisfy, or a body
-    /// it cannot compile. A module the JIT judges *invalid* is not retried:
+    /// for a module the JIT *declines*. One it judges *invalid* is not retried:
     /// instantiation fails with
     /// [`TrapKind::InvalidModule`](crate::error::TrapKind::InvalidModule).
     Auto,
@@ -56,15 +54,8 @@ pub enum EngineKind {
 
 impl EngineKind {
     /// The `engine_kind` byte `zwasm_instance_new_ex` takes, or `None` for an
-    /// `Unknown` that does not fit one.
-    ///
-    /// `Unknown` is carried through rather than rejected, so a kind read back
-    /// from [`Instance::engine`] reaches a zwasm that knows it even when this
-    /// crate's table does not. Truncating one that does not fit would not be a
-    /// weaker version of that: `256` would ask for `Auto` and `-255` for `Jit`,
-    /// so a value this crate cannot express would silently become a *different*
-    /// engine. zwasm cannot catch it either — an unrecognized byte is `Auto`
-    /// there, not a refusal (zwasm/zwasm#459).
+    /// [`Unknown`](Self::Unknown) that does not fit one — truncating it would
+    /// ask for a different engine, and nothing downstream would notice.
     pub(crate) fn as_raw(self) -> Option<u8> {
         match self {
             EngineKind::Auto => Some(0),
@@ -127,9 +118,8 @@ impl Instance {
     ///
     /// # Errors
     ///
-    /// An [`EngineKind::Unknown`] carrying a value that does not fit the byte
-    /// the C entry point takes fails with [`Error::Message`] before zwasm is
-    /// called at all, because truncating it would ask for a different engine.
+    /// An [`EngineKind::Unknown`] too large for the byte the C entry point
+    /// takes fails with [`Error::Message`] before zwasm is called at all.
     ///
     /// A module the chosen engine *declines* fails with [`Error::Message`]
     /// naming the engine that was asked for. zwasm reports a decline as a null
@@ -268,9 +258,9 @@ impl Instance {
     /// The engine that actually ran this instance — [`EngineKind::Jit`] or
     /// [`EngineKind::Interp`], never [`EngineKind::Auto`].
     ///
-    /// `Auto` is what you asked for; this is what you got. An instance `Auto`
+    /// `Auto` is what you asked for; this is what you got — an instance `Auto`
     /// handed to the interpreter because the JIT declined its module reports
-    /// `Interp` here. Mirrors `zwasm_instance_engine` (zwasm's ADR-0200 D3).
+    /// `Interp`. Mirrors `zwasm_instance_engine` (zwasm's ADR-0200 D3).
     ///
     /// # Panics
     ///
