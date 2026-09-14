@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Changed
+- **Breaking.** `Engine` is no longer `Send` or `Sync`. zwasm 2.7.0 states that its engine is single-threaded per *process*, not per store: stores share process-global state, so a thread deleting one store can free memory a call on another thread is still reading, even with no handle shared between them. The `unsafe impl` this crate carried let safe code build exactly that. Removing it is necessary rather than sufficient — two engines created independently on two threads are no safer — and nothing here prevents that yet
 - Updated the bundled zwasm C API to 2.7.0
 
 ### Added

@@ -35,8 +35,9 @@ static NEXT_STORE_ID: AtomicU64 = AtomicU64::new(0);
 /// store and engine back-pointers, so the store deletes its children first and
 /// itself last, and keeps its [`Engine`] alive until after that.
 ///
-/// A store is deliberately neither `Send` nor `Sync`, because the C side is
-/// single threaded per store.
+/// A store is neither `Send` nor `Sync`. The confinement is not per store but
+/// per process — see [`Engine`] — so keeping a store on one thread is necessary
+/// rather than sufficient.
 ///
 /// There is no `Default`, because a store needs an [`Engine`], and engines are
 /// meant to be created once and shared rather than made as a side effect.
