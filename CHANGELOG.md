@@ -3,8 +3,15 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Changed
+- Updated the bundled zwasm C API to 2.7.0
+
 ### Added
+- `TrapKind::InvalidModule` and `TrapKind::Unsupported`, for the two kinds zwasm 2.7.0 added. Neither is a guest fault, and neither is something a different engine choice fixes where it appears: the first comes from instantiation when the JIT judges a module invalid, the second from a call the engine has no implementation for, and `AUTO` falls back to the interpreter for neither
 - The Zig target can be set with `ZWASM_ZIG_TARGET`, and is otherwise taken from `CARGO_ZIGBUILD_TARGET_<target>` or `CARGO_ZIGBUILD_TARGET` when cargo-zigbuild 0.23.4 or later exports them. Without any of these the triple is computed as before, so a build that sets nothing is unchanged. This is what lets a build ask for a glibc floor: the version in `--target x86_64-unknown-linux-gnu.2.28` never reached the C half before, so it was built for whatever glibc Zig defaults to
+
+### Fixed
+- `Error::Trap` no longer carries a trailing NUL in its message, so a trap printed as `unreachable\0` now prints as `unreachable`. `wasm.h` has always declared the message null-terminated and counted the terminator in its size; zwasm began honouring that in 2.7.0, and this crate had been reading the size verbatim
 
 ## [0.2.0] - 2026-08-31
 ### Changed
