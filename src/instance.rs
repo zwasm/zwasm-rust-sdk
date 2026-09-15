@@ -281,11 +281,13 @@ impl Instance {
     ///
     /// # What a budget does not stop
     ///
-    /// The JIT emits no poll for a function that never touches its runtime
-    /// pointer, so a trivial one — a body that only pushes a constant, say —
-    /// runs to completion on an exhausted budget rather than trapping
-    /// (zwasm/zwasm#466). A loop is always polled, so this bounds how *little*
-    /// is charged, not how long a guest can run.
+    /// The x86_64 JIT backend emits no poll for a function that never touches
+    /// its runtime pointer, so a trivial one — a body that only pushes a
+    /// constant, say — runs to completion on an exhausted budget rather than
+    /// trapping. The arm64 backend polls on every function entry, so the same
+    /// call traps there: this is a property of the backend, not of the engine
+    /// (zwasm/zwasm#466). A loop is polled on both, so it bounds how *little*
+    /// can be charged, not how long a guest can run.
     ///
     /// The start function is outside any budget, because it has already run by
     /// the time there is an instance to arm — see [`new`](Self::new).

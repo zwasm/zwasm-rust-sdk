@@ -139,31 +139,43 @@ const TRIVIAL: &[u8] = &[
     0x07, 0x0b,
 ];
 
-// The JIT emits a fuel poll only for a function that touches its runtime
-// pointer, so a body that just pushes a constant crosses no poll site and an
-// exhausted budget does not stop it. zwasm knows — it pins its own trivial-fn
-// fuel test to the interpreter for this reason (D-499) — but `zwasm.h` still
-// describes the JIT's unit as "function entry + loop back-edges"
-// (zwasm/zwasm#466).
+// Whether a trivial function is metered on the JIT depends on the backend, not
+// on the engine. x86_64 emits the fuel poll only for a function that uses its
+// runtime pointer (`src/engine/codegen/x86_64/usage.zig::usesRuntimePtr`), so a
+// body that just pushes a constant crosses no poll site and an exhausted budget
+// does not stop it. arm64 has no such gate — the poll is fixed words 17-23 of
+// every prologue (`src/engine/codegen/arm64/prologue.zig`) — so the same call
+// traps there.
 //
-// Pinned here rather than left to be discovered: `set_fuel`'s doc states this
-// exception, so it has to break if the JIT starts emitting the entry poll.
+// `zwasm.h` describes the JIT's unit as "function entry + loop back-edges" with
+// no such split (zwasm/zwasm#466), and zwasm's own trivial-fn fuel test is
+// pinned to the interpreter over it (D-499, which names x86_64).
+//
+// Asserted per arch rather than skipped, so that either backend changing its
+// mind breaks this rather than going unnoticed. A loop is polled on both, which
+// is why `a_unit_means_something_different_on_each_engine` holds everywhere.
 #[test]
-fn a_trivial_jit_function_outruns_an_exhausted_budget() {
+fn a_trivial_jit_function_is_metered_only_where_the_backend_polls() {
     let (mut store, instance, f) = instantiate(TRIVIAL, EngineKind::Jit);
     instance.set_fuel(&mut store, 0);
 
     let mut results = vec![Val::I32(0); f.result_arity(&store)];
-    f.call(&mut store, &[], &mut results)
-        .expect("a trivial JIT function is not metered");
-    assert_eq!(results, [Val::I32(7)]);
-    assert_eq!(instance.fuel_remaining(&store), Some(0));
+    let outcome = f.call(&mut store, &[], &mut results);
+
+    if cfg!(target_arch = "x86_64") {
+        outcome.expect("x86_64 emits no poll for a function with no runtime-pointer use");
+        assert_eq!(results, [Val::I32(7)]);
+        assert_eq!(instance.fuel_remaining(&store), Some(0));
+    } else {
+        let err = outcome.expect_err("every other backend polls on function entry");
+        assert_eq!(err.trap_kind(), Some(TrapKind::OutOfFuel));
+    }
 }
 
 // The same function on the interpreter, which counts instructions rather than
-// poll sites, is the contrast that places the gap in the JIT and not the API.
+// poll sites, traps on every target — the split above is the JIT's alone.
 #[test]
-fn a_trivial_interpreted_function_does_not() {
+fn a_trivial_interpreted_function_is_always_metered() {
     let (mut store, instance, f) = instantiate(TRIVIAL, EngineKind::Interp);
     instance.set_fuel(&mut store, 0);
 
