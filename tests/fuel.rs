@@ -4,7 +4,7 @@
 //! The budget is per instance, and a unit means something different on each
 //! engine, so the tests that care about a count pin the engine.
 
-use zwasm_sdk::{Engine, EngineKind, Error, Instance, Module, Store, TrapKind, Val};
+use zwasm_sdk::{Engine, EngineKind, Error, Func, Instance, Module, Store, TrapKind, Val};
 
 // (module (func (export "f") (param $n i32) (result i32) (local $i i32)
 //   (block $done (loop $l
@@ -19,18 +19,28 @@ const LOOP: &[u8] = &[
     0x01, 0x6a, 0x21, 0x01, 0x0c, 0x00, 0x0b, 0x0b, 0x20, 0x01, 0x0b,
 ];
 
-/// A store holding one instance of `LOOP` on `kind`, plus that instance.
-fn loop_instance(kind: EngineKind) -> (Store, Instance) {
+/// A store holding one instance of `wasm` on `kind`, that instance, and its
+/// `f` export.
+///
+/// The export is resolved once and carried: `get_func` allocates a fresh C
+/// handle the store owns until it drops, so resolving it inside a helper
+/// several tests call twice would grow the store for no reason. Its own doc
+/// says to hold the [`Func`] instead — it is `Copy`.
+fn instantiate(wasm: &[u8], kind: EngineKind) -> (Store, Instance, Func) {
     let engine = Engine::new().unwrap();
     let mut store = Store::new(&engine).unwrap();
-    let module = Module::new(&mut store, LOOP).unwrap();
+    let module = Module::new(&mut store, wasm).unwrap();
     let instance = Instance::new_with_engine(&mut store, &module, &[], kind).unwrap();
-    (store, instance)
+    let f = instance.get_func(&mut store, "f").unwrap();
+    (store, instance, f)
+}
+
+fn loop_instance(kind: EngineKind) -> (Store, Instance, Func) {
+    instantiate(LOOP, kind)
 }
 
 /// Runs the loop `n` times.
-fn run(store: &mut Store, instance: &Instance, n: i32) -> Result<(), Error> {
-    let f = instance.get_func(store, "f").unwrap();
+fn run(store: &mut Store, f: &Func, n: i32) -> Result<(), Error> {
     let mut results = vec![Val::I32(0); f.result_arity(store)];
     f.call(store, &[Val::I32(n)], &mut results)
 }
@@ -39,17 +49,17 @@ fn run(store: &mut Store, instance: &Instance, n: i32) -> Result<(), Error> {
 // instead, and says so with a kind rather than only a message.
 #[test]
 fn a_guest_past_its_budget_traps_with_out_of_fuel() {
-    let (mut store, instance) = loop_instance(EngineKind::Interp);
+    let (mut store, instance, f) = loop_instance(EngineKind::Interp);
     instance.set_fuel(&mut store, 1_000);
 
-    let err = run(&mut store, &instance, 100_000).expect_err("the budget cannot cover this");
+    let err = run(&mut store, &f, 100_000).expect_err("the budget cannot cover this");
     assert_eq!(err.trap_kind(), Some(TrapKind::OutOfFuel));
 }
 
 // The issue's second acceptance criterion.
 #[test]
 fn remaining_is_none_until_a_budget_is_armed() {
-    let (mut store, instance) = loop_instance(EngineKind::Interp);
+    let (mut store, instance, _f) = loop_instance(EngineKind::Interp);
     assert_eq!(instance.fuel_remaining(&store), None);
 
     instance.set_fuel(&mut store, 1_234);
@@ -60,9 +70,9 @@ fn remaining_is_none_until_a_budget_is_armed() {
 // metered, and reports the zero it reached.
 #[test]
 fn an_exhausted_budget_reads_zero_rather_than_none() {
-    let (mut store, instance) = loop_instance(EngineKind::Interp);
+    let (mut store, instance, f) = loop_instance(EngineKind::Interp);
     instance.set_fuel(&mut store, 1_000);
-    run(&mut store, &instance, 100_000).unwrap_err();
+    run(&mut store, &f, 100_000).unwrap_err();
 
     assert_eq!(instance.fuel_remaining(&store), Some(0));
 }
@@ -70,31 +80,31 @@ fn an_exhausted_budget_reads_zero_rather_than_none() {
 // `set_fuel` re-arms rather than adds, so an instance that ran out is not spent.
 #[test]
 fn re_arming_lets_an_exhausted_instance_run_again() {
-    let (mut store, instance) = loop_instance(EngineKind::Interp);
+    let (mut store, instance, f) = loop_instance(EngineKind::Interp);
     instance.set_fuel(&mut store, 1_000);
-    run(&mut store, &instance, 100_000).unwrap_err();
+    run(&mut store, &f, 100_000).unwrap_err();
 
     instance.set_fuel(&mut store, 10_000_000);
-    run(&mut store, &instance, 100_000).expect("a re-armed budget covers the same call");
+    run(&mut store, &f, 100_000).expect("a re-armed budget covers the same call");
 }
 
 #[test]
 fn disabling_the_budget_unmeters_the_instance() {
-    let (mut store, instance) = loop_instance(EngineKind::Interp);
+    let (mut store, instance, f) = loop_instance(EngineKind::Interp);
     instance.set_fuel(&mut store, 1_000);
-    run(&mut store, &instance, 100_000).unwrap_err();
+    run(&mut store, &f, 100_000).unwrap_err();
 
     instance.disable_fuel(&mut store);
     assert_eq!(instance.fuel_remaining(&store), None);
-    run(&mut store, &instance, 100_000).expect("an unmetered guest runs to completion");
+    run(&mut store, &f, 100_000).expect("an unmetered guest runs to completion");
 }
 
 /// What one call of `n` iterations costs on `kind`.
 fn cost(kind: EngineKind, n: i32) -> u64 {
-    let (mut store, instance) = loop_instance(kind);
+    let (mut store, instance, f) = loop_instance(kind);
     let budget = 10_000_000;
     instance.set_fuel(&mut store, budget);
-    run(&mut store, &instance, n).expect("the budget covers this");
+    run(&mut store, &f, n).expect("the budget covers this");
     budget - instance.fuel_remaining(&store).expect("still metered")
 }
 
@@ -122,10 +132,51 @@ fn a_unit_means_something_different_on_each_engine() {
     );
 }
 
+// (module (func (export "f") (result i32) (i32.const 7)))
+const TRIVIAL: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f, 0x03,
+    0x02, 0x01, 0x00, 0x07, 0x05, 0x01, 0x01, 0x66, 0x00, 0x00, 0x0a, 0x06, 0x01, 0x04, 0x00, 0x41,
+    0x07, 0x0b,
+];
+
+// The JIT emits a fuel poll only for a function that touches its runtime
+// pointer, so a body that just pushes a constant crosses no poll site and an
+// exhausted budget does not stop it. zwasm knows — it pins its own trivial-fn
+// fuel test to the interpreter for this reason (D-499) — but `zwasm.h` still
+// describes the JIT's unit as "function entry + loop back-edges".
+//
+// Pinned here rather than left to be discovered: `set_fuel`'s doc states this
+// exception, so it has to break if the JIT starts emitting the entry poll.
+#[test]
+fn a_trivial_jit_function_outruns_an_exhausted_budget() {
+    let (mut store, instance, f) = instantiate(TRIVIAL, EngineKind::Jit);
+    instance.set_fuel(&mut store, 0);
+
+    let mut results = vec![Val::I32(0); f.result_arity(&store)];
+    f.call(&mut store, &[], &mut results)
+        .expect("a trivial JIT function is not metered");
+    assert_eq!(results, [Val::I32(7)]);
+    assert_eq!(instance.fuel_remaining(&store), Some(0));
+}
+
+// The same function on the interpreter, which counts instructions rather than
+// poll sites, is the contrast that places the gap in the JIT and not the API.
+#[test]
+fn a_trivial_interpreted_function_does_not() {
+    let (mut store, instance, f) = instantiate(TRIVIAL, EngineKind::Interp);
+    instance.set_fuel(&mut store, 0);
+
+    let mut results = vec![Val::I32(0); f.result_arity(&store)];
+    let err = f
+        .call(&mut store, &[], &mut results)
+        .expect_err("the interpreter charges for the instructions it runs");
+    assert_eq!(err.trap_kind(), Some(TrapKind::OutOfFuel));
+}
+
 #[test]
 #[should_panic(expected = "store it does not belong to")]
 fn set_fuel_with_a_foreign_store_panics() {
-    let (_store_a, instance) = loop_instance(EngineKind::Interp);
+    let (_store_a, instance, _f) = loop_instance(EngineKind::Interp);
     let engine = Engine::new().unwrap();
     let mut store_b = Store::new(&engine).unwrap();
     instance.set_fuel(&mut store_b, 1);
@@ -134,7 +185,7 @@ fn set_fuel_with_a_foreign_store_panics() {
 #[test]
 #[should_panic(expected = "store it does not belong to")]
 fn disable_fuel_with_a_foreign_store_panics() {
-    let (_store_a, instance) = loop_instance(EngineKind::Interp);
+    let (_store_a, instance, _f) = loop_instance(EngineKind::Interp);
     let engine = Engine::new().unwrap();
     let mut store_b = Store::new(&engine).unwrap();
     instance.disable_fuel(&mut store_b);
@@ -143,7 +194,7 @@ fn disable_fuel_with_a_foreign_store_panics() {
 #[test]
 #[should_panic(expected = "store it does not belong to")]
 fn fuel_remaining_with_a_foreign_store_panics() {
-    let (_store_a, instance) = loop_instance(EngineKind::Interp);
+    let (_store_a, instance, _f) = loop_instance(EngineKind::Interp);
     let engine = Engine::new().unwrap();
     let store_b = Store::new(&engine).unwrap();
     let _ = instance.fuel_remaining(&store_b);
