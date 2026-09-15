@@ -103,8 +103,8 @@ impl Instance {
     ///
     /// Nothing bounds what else it does. It runs before there is an instance to
     /// arm, and the C ABI this crate binds takes no limits on instantiation
-    /// (zwasm/zwasm#465) — zwasm can arm them ahead of it, but only through its
-    /// Zig API. So a start function that does not return hangs the host, and
+    /// (#41, blocked on zwasm/zwasm#465) — zwasm can arm them ahead of it, but
+    /// only through its Zig API. So a start function that does not return hangs the host, and
     /// one that grows memory keeps those pages.
     /// [`set_fuel`](Self::set_fuel) and
     /// [`set_memory_pages_limit`](Self::set_memory_pages_limit) cover what

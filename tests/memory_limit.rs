@@ -148,9 +148,10 @@ const START_GROWS: &[u8] = &[
 
 // A start function runs inside `Instance::new`, so it grows before there is an
 // instance to cap, and the cap does not reclaim what it took. The C ABI takes
-// no limits on instantiation (zwasm/zwasm#465), so this is the shape of the
-// hole rather than a bug to fix here — pinned so the docs that describe it stay
-// true, and so it breaks if a pre-start entry point ever arrives.
+// no limits on instantiation, so this is the shape of the hole rather than a
+// bug to fix here — #41 tracks it, blocked on zwasm/zwasm#465. Pinned so the
+// docs that describe it stay true, and so it breaks if a pre-start entry point
+// ever arrives.
 #[test]
 fn a_start_function_grows_before_any_cap_can_exist() {
     let engine = Engine::new().unwrap();
