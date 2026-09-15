@@ -255,6 +255,62 @@ impl Instance {
         })
     }
 
+    /// Arms the fuel budget, so the guest traps with
+    /// [`TrapKind::OutOfFuel`](crate::error::TrapKind::OutOfFuel) when it runs
+    /// out instead of running to completion.
+    ///
+    /// Re-arms rather than adds: a second call replaces whatever is left, and
+    /// an instance that already exhausted its budget runs again once re-armed.
+    ///
+    /// The budget is per instance. wasmtime meters a whole `Store`, so its
+    /// `Store::set_fuel` and this one are not the same scope.
+    ///
+    /// # Units
+    ///
+    /// A unit is engine-specific: the interpreter counts instructions executed,
+    /// the JIT counts poll-site crossings — one function entry plus one per
+    /// loop back-edge, so an *n*-iteration loop costs *n* + 1 there and roughly
+    /// an order of magnitude more on the interpreter. A budget therefore means
+    /// nothing portable unless the engine is pinned with
+    /// [`new_with_engine`](Self::new_with_engine).
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn set_fuel(&self, store: &mut Store, fuel: u64) {
+        store.check(self.store_id);
+        unsafe { sys::zwasm_instance_set_fuel(self.ptr, fuel) }
+    }
+
+    /// Removes the budget, so the guest runs unmetered again.
+    ///
+    /// [`fuel_remaining`](Self::fuel_remaining) reports `None` afterwards,
+    /// whatever was left.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn disable_fuel(&self, store: &mut Store) {
+        store.check(self.store_id);
+        unsafe { sys::zwasm_instance_disable_fuel(self.ptr) }
+    }
+
+    /// The fuel left on this instance, or `None` when no budget is armed.
+    ///
+    /// `None` is not zero. An instance that ran out reports `Some(0)` and stays
+    /// metered until [`set_fuel`](Self::set_fuel) re-arms it or
+    /// [`disable_fuel`](Self::disable_fuel) removes it; one that was never
+    /// armed, or was disabled, reports `None`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn fuel_remaining(&self, store: &Store) -> Option<u64> {
+        store.check(self.store_id);
+        let mut fuel: u64 = 0;
+        unsafe { sys::zwasm_instance_fuel_remaining(self.ptr, &mut fuel) }.then_some(fuel)
+    }
+
     /// The engine that actually ran this instance — [`EngineKind::Jit`] or
     /// [`EngineKind::Interp`], never [`EngineKind::Auto`].
     ///
