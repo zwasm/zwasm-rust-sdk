@@ -99,12 +99,16 @@ impl Instance {
     /// with [`Store::set_wasi`](crate::store::Store::set_wasi), not through this
     /// argument.
     ///
-    /// A trap in the start function is returned as [`Error::Trap`]. One that
-    /// does not return at all hangs the host, and no budget can stop it: zwasm
-    /// arms fuel ahead of the start function only through its Zig API, and the
-    /// C ABI this crate binds takes no budget on instantiation
-    /// (zwasm/zwasm#465). [`set_fuel`](Self::set_fuel) covers every call made
-    /// after this returns, not this.
+    /// A trap in the start function is returned as [`Error::Trap`].
+    ///
+    /// Nothing bounds what else it does. It runs before there is an instance to
+    /// arm, and the C ABI this crate binds takes no limits on instantiation
+    /// (#41, blocked on zwasm/zwasm#465) — zwasm can arm them ahead of it, but
+    /// only through its Zig API. So a start function that does not return hangs
+    /// the host, and one that grows memory keeps those pages;
+    /// [`set_fuel`](Self::set_fuel) and
+    /// [`set_memory_pages_limit`](Self::set_memory_pages_limit) cover what
+    /// happens after this returns, not this.
     ///
     /// # Panics
     ///
@@ -329,6 +333,51 @@ impl Instance {
         store.check(self.store_id);
         let mut fuel: u64 = 0;
         unsafe { sys::zwasm_instance_fuel_remaining(self.ptr, &mut fuel) }.then_some(fuel)
+    }
+
+    /// Caps how far the guest can grow memory 0, in wasm pages of 64 KiB — a
+    /// ceiling meant as 64 MiB is `1024`, not the byte count.
+    ///
+    /// zwasm offers no way to read the cap back, so a caller that needs to
+    /// know has to remember.
+    ///
+    /// # It does not trap
+    ///
+    /// A `memory.grow` past the cap returns the spec's own grow failure, `-1`,
+    /// and leaves the memory at its current size — nothing reaches the host.
+    /// In particular this is unrelated to
+    /// [`TrapKind::OutOfMemory`](crate::error::TrapKind::OutOfMemory), which
+    /// zwasm raises for an allocator failure or the GC heap's own ceiling.
+    ///
+    /// Setting a cap below the size already allocated shrinks nothing and
+    /// refuses every later grow, including one of zero pages — which otherwise
+    /// succeeds at any cap the size has not passed. A start function that grew
+    /// memory leaves exactly that state, and cannot be capped ahead of time —
+    /// see [`new`](Self::new).
+    ///
+    /// # Not the module's declared maximum
+    ///
+    /// A memory type can declare a maximum of its own, which belongs to the
+    /// module and is what [`Memory::grow`](crate::memory::Memory::grow)
+    /// checks. This is a host ceiling on one instance, and may sit below it.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn set_memory_pages_limit(&self, store: &mut Store, max_pages: u64) {
+        store.check(self.store_id);
+        unsafe { sys::zwasm_instance_set_memory_pages_limit(self.ptr, max_pages) }
+    }
+
+    /// Removes the cap, so the guest can grow to whatever the module's own
+    /// maximum allows again.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn clear_memory_pages_limit(&self, store: &mut Store) {
+        store.check(self.store_id);
+        unsafe { sys::zwasm_instance_clear_memory_pages_limit(self.ptr) }
     }
 
     /// The engine that actually ran this instance — [`EngineKind::Jit`] or
