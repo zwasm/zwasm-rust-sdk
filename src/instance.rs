@@ -329,6 +329,52 @@ impl Instance {
         unsafe { sys::zwasm_instance_fuel_remaining(self.ptr, &mut fuel) }.then_some(fuel)
     }
 
+    /// Caps how far the guest can grow memory 0, in wasm pages of 64 KiB.
+    ///
+    /// Pages, not bytes: a ceiling meant as 64 MiB is `1024` here, and writing
+    /// the byte count asks for four terabytes.
+    ///
+    /// # It does not trap
+    ///
+    /// A `memory.grow` past the cap returns the spec's own grow failure, `-1`,
+    /// and leaves the memory at its current size. The guest sees an allocation
+    /// that did not happen, not a fault, and nothing reaches the host. In
+    /// particular this is unrelated to
+    /// [`TrapKind::OutOfMemory`](crate::error::TrapKind::OutOfMemory), which
+    /// zwasm raises for an allocator failure or the GC heap's own ceiling.
+    ///
+    /// # Not the module's declared maximum
+    ///
+    /// A memory type can declare a maximum of its own, which belongs to the
+    /// module and is what [`Memory::grow`](crate::memory::Memory::grow)
+    /// checks. This is a host ceiling on one instance, and may sit below it.
+    ///
+    /// Setting it below the size already allocated shrinks nothing, and
+    /// refuses every later grow — including one of zero pages, which succeeds
+    /// at any cap the size has not already passed.
+    ///
+    /// zwasm offers no way to read the cap back, so a caller that needs to
+    /// know has to remember.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn set_memory_pages_limit(&self, store: &mut Store, max_pages: u64) {
+        store.check(self.store_id);
+        unsafe { sys::zwasm_instance_set_memory_pages_limit(self.ptr, max_pages) }
+    }
+
+    /// Removes the cap, so the guest can grow to whatever the module's own
+    /// maximum allows again.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn clear_memory_pages_limit(&self, store: &mut Store) {
+        store.check(self.store_id);
+        unsafe { sys::zwasm_instance_clear_memory_pages_limit(self.ptr) }
+    }
+
     /// The engine that actually ran this instance — [`EngineKind::Jit`] or
     /// [`EngineKind::Interp`], never [`EngineKind::Auto`].
     ///
