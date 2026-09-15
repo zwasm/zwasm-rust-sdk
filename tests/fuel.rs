@@ -143,7 +143,8 @@ const TRIVIAL: &[u8] = &[
 // pointer, so a body that just pushes a constant crosses no poll site and an
 // exhausted budget does not stop it. zwasm knows — it pins its own trivial-fn
 // fuel test to the interpreter for this reason (D-499) — but `zwasm.h` still
-// describes the JIT's unit as "function entry + loop back-edges".
+// describes the JIT's unit as "function entry + loop back-edges"
+// (zwasm/zwasm#466).
 //
 // Pinned here rather than left to be discovered: `set_fuel`'s doc states this
 // exception, so it has to break if the JIT starts emitting the entry poll.

@@ -278,16 +278,16 @@ impl Instance {
     ///
     /// The JIT emits no poll for a function that never touches its runtime
     /// pointer, so a trivial one — a body that only pushes a constant, say —
-    /// runs to completion on an exhausted budget rather than trapping.
-    /// Measured, not inferred. A loop is always polled, so this bounds how
-    /// *little* is charged, not how long a guest can run.
+    /// runs to completion on an exhausted budget rather than trapping
+    /// (zwasm/zwasm#466). A loop is always polled, so this bounds how *little*
+    /// is charged, not how long a guest can run.
     ///
     /// A module's start function runs inside [`new`](Self::new) and
     /// [`new_with_engine`](Self::new_with_engine), which is before any instance
     /// exists to arm. zwasm can arm a budget ahead of it, but only through its
     /// Zig API — the C ABI this crate binds carries no budget parameter on
-    /// instantiation — so a start function that does not return hangs the host
-    /// and nothing here can bound it.
+    /// instantiation (zwasm/zwasm#465) — so a start function that does not
+    /// return hangs the host and nothing here can bound it.
     ///
     /// # Panics
     ///
