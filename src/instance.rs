@@ -99,7 +99,12 @@ impl Instance {
     /// with [`Store::set_wasi`](crate::store::Store::set_wasi), not through this
     /// argument.
     ///
-    /// A trap in the start function is returned as [`Error::Trap`].
+    /// A trap in the start function is returned as [`Error::Trap`]. One that
+    /// does not return at all hangs the host, and no budget can stop it: zwasm
+    /// arms fuel ahead of the start function only through its Zig API, and the
+    /// C ABI this crate binds takes no budget on instantiation
+    /// (zwasm/zwasm#465). [`set_fuel`](Self::set_fuel) covers every call made
+    /// after this returns, not this.
     ///
     /// # Panics
     ///
@@ -282,12 +287,8 @@ impl Instance {
     /// (zwasm/zwasm#466). A loop is always polled, so this bounds how *little*
     /// is charged, not how long a guest can run.
     ///
-    /// A module's start function runs inside [`new`](Self::new) and
-    /// [`new_with_engine`](Self::new_with_engine), which is before any instance
-    /// exists to arm. zwasm can arm a budget ahead of it, but only through its
-    /// Zig API — the C ABI this crate binds carries no budget parameter on
-    /// instantiation (zwasm/zwasm#465) — so a start function that does not
-    /// return hangs the host and nothing here can bound it.
+    /// The start function is outside any budget, because it has already run by
+    /// the time there is an instance to arm — see [`new`](Self::new).
     ///
     /// # Panics
     ///
