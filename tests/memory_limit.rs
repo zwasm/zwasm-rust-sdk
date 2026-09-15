@@ -135,6 +135,46 @@ fn both_engines_enforce_the_cap_the_same_way() {
     assert_eq!(outcomes[0], (1, GROW_FAILED, 3));
 }
 
+// (module (memory 1) (func $s (drop (memory.grow (i32.const 100)))) (start $s)
+//   (func (export "size") (result i32) (memory.size))
+//   (func (export "g") (param i32) (result i32) (memory.grow (local.get 0))))
+const START_GROWS: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x0d, 0x03, 0x60, 0x00, 0x00, 0x60, 0x00,
+    0x01, 0x7f, 0x60, 0x01, 0x7f, 0x01, 0x7f, 0x03, 0x04, 0x03, 0x00, 0x01, 0x02, 0x05, 0x03, 0x01,
+    0x00, 0x01, 0x07, 0x0c, 0x02, 0x04, 0x73, 0x69, 0x7a, 0x65, 0x00, 0x01, 0x01, 0x67, 0x00, 0x02,
+    0x08, 0x01, 0x00, 0x0a, 0x16, 0x03, 0x08, 0x00, 0x41, 0xe4, 0x00, 0x40, 0x00, 0x1a, 0x0b, 0x04,
+    0x00, 0x3f, 0x00, 0x0b, 0x06, 0x00, 0x20, 0x00, 0x40, 0x00, 0x0b,
+];
+
+// A start function runs inside `Instance::new`, so it grows before there is an
+// instance to cap, and the cap does not reclaim what it took. The C ABI takes
+// no limits on instantiation (zwasm/zwasm#465), so this is the shape of the
+// hole rather than a bug to fix here — pinned so the docs that describe it stay
+// true, and so it breaks if a pre-start entry point ever arrives.
+#[test]
+fn a_start_function_grows_before_any_cap_can_exist() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let module = Module::new(&mut store, START_GROWS).unwrap();
+    let instance = Instance::new_with_engine(&mut store, &module, &[], EngineKind::Interp).unwrap();
+    let g = instance.get_func(&mut store, "g").unwrap();
+    let sz = instance.get_func(&mut store, "size").unwrap();
+
+    assert_eq!(
+        size(&mut store, &sz),
+        101,
+        "the start function already grew"
+    );
+
+    instance.set_memory_pages_limit(&mut store, 10);
+    assert_eq!(size(&mut store, &sz), 101, "a later cap reclaims nothing");
+    assert_eq!(
+        grow(&mut store, &g, 1),
+        GROW_FAILED,
+        "it only stops what is next"
+    );
+}
+
 #[test]
 #[should_panic(expected = "store it does not belong to")]
 fn setting_a_cap_with_a_foreign_store_panics() {
