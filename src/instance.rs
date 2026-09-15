@@ -274,27 +274,29 @@ impl Instance {
     /// The budget is per instance. wasmtime meters a whole `Store`, so its
     /// `Store::set_fuel` and this one are not the same scope.
     ///
+    /// It covers what the guest does after this returns. The start function has
+    /// already run by the time there is an instance to arm, and no budget
+    /// reaches it — see [`new`](Self::new).
+    ///
     /// # Units
     ///
     /// A unit is engine-specific: the interpreter counts instructions executed,
     /// the JIT counts poll-site crossings — one per loop back-edge, plus one on
-    /// entering a function that is polled at all. An *n*-iteration loop costs
-    /// *n* + 1 on the JIT and roughly an order of magnitude more on the
-    /// interpreter, so a budget means nothing portable unless the engine is
-    /// pinned with [`new_with_engine`](Self::new_with_engine).
+    /// entering a function the backend polls at all.
     ///
-    /// # What a budget does not stop
-    ///
-    /// The x86_64 JIT backend emits no poll for a function that never touches
-    /// its runtime pointer, so a trivial one — a body that only pushes a
-    /// constant, say — runs to completion on an exhausted budget rather than
-    /// trapping. The arm64 backend polls on every function entry, so the same
-    /// call traps there: this is a property of the backend, not of the engine
-    /// (zwasm/zwasm#466). A loop is polled on both, so it bounds how *little*
+    /// Which functions those are is a property of the backend, not of the
+    /// engine (zwasm/zwasm#466). The x86_64 backend emits no poll for a function
+    /// that never touches its runtime pointer, so a trivial one — a body that
+    /// only pushes a constant, say — is charged nothing, and runs to completion
+    /// on an exhausted budget rather than trapping. The arm64 backend polls on
+    /// every function entry, so the same call costs one unit and traps there.
+    /// A function with a loop is polled on both: what varies is how *little*
     /// can be charged, not how long a guest can run.
     ///
-    /// The start function is outside any budget, because it has already run by
-    /// the time there is an instance to arm — see [`new`](Self::new).
+    /// So an *n*-iteration loop costs *n* + 1 on the JIT, whatever the backend,
+    /// and roughly an order of magnitude more on the interpreter — a budget
+    /// means nothing portable unless the engine is pinned with
+    /// [`new_with_engine`](Self::new_with_engine).
     ///
     /// # Panics
     ///
