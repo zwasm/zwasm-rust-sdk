@@ -329,32 +329,29 @@ impl Instance {
         unsafe { sys::zwasm_instance_fuel_remaining(self.ptr, &mut fuel) }.then_some(fuel)
     }
 
-    /// Caps how far the guest can grow memory 0, in wasm pages of 64 KiB.
+    /// Caps how far the guest can grow memory 0, in wasm pages of 64 KiB — a
+    /// ceiling meant as 64 MiB is `1024`, not the byte count.
     ///
-    /// Pages, not bytes: a ceiling meant as 64 MiB is `1024` here, and writing
-    /// the byte count asks for four terabytes.
+    /// zwasm offers no way to read the cap back, so a caller that needs to
+    /// know has to remember.
     ///
     /// # It does not trap
     ///
     /// A `memory.grow` past the cap returns the spec's own grow failure, `-1`,
-    /// and leaves the memory at its current size. The guest sees an allocation
-    /// that did not happen, not a fault, and nothing reaches the host. In
-    /// particular this is unrelated to
+    /// and leaves the memory at its current size — nothing reaches the host.
+    /// In particular this is unrelated to
     /// [`TrapKind::OutOfMemory`](crate::error::TrapKind::OutOfMemory), which
     /// zwasm raises for an allocator failure or the GC heap's own ceiling.
+    ///
+    /// Setting a cap below the size already allocated shrinks nothing and
+    /// refuses every later grow, including one of zero pages — which otherwise
+    /// succeeds at any cap the size has not passed.
     ///
     /// # Not the module's declared maximum
     ///
     /// A memory type can declare a maximum of its own, which belongs to the
     /// module and is what [`Memory::grow`](crate::memory::Memory::grow)
     /// checks. This is a host ceiling on one instance, and may sit below it.
-    ///
-    /// Setting it below the size already allocated shrinks nothing, and
-    /// refuses every later grow — including one of zero pages, which succeeds
-    /// at any cap the size has not already passed.
-    ///
-    /// zwasm offers no way to read the cap back, so a caller that needs to
-    /// know has to remember.
     ///
     /// # Panics
     ///
