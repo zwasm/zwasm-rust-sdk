@@ -99,7 +99,12 @@ impl Instance {
     /// with [`Store::set_wasi`](crate::store::Store::set_wasi), not through this
     /// argument.
     ///
-    /// A trap in the start function is returned as [`Error::Trap`].
+    /// A trap in the start function is returned as [`Error::Trap`]. One that
+    /// does not return at all hangs the host, and no budget can stop it: zwasm
+    /// arms fuel ahead of the start function only through its Zig API, and the
+    /// C ABI this crate binds takes no budget on instantiation
+    /// (zwasm/zwasm#465). [`set_fuel`](Self::set_fuel) covers every call made
+    /// after this returns, not this.
     ///
     /// # Panics
     ///
@@ -253,6 +258,75 @@ impl Instance {
             ptr,
             store_id: store.id,
         })
+    }
+
+    /// Arms the fuel budget, so the guest traps with
+    /// [`TrapKind::OutOfFuel`](crate::error::TrapKind::OutOfFuel) when it runs
+    /// out instead of running to completion.
+    ///
+    /// Re-arms rather than adds: a second call replaces whatever is left, and
+    /// an instance that already exhausted its budget runs again once re-armed.
+    ///
+    /// The budget is per instance. wasmtime meters a whole `Store`, so its
+    /// `Store::set_fuel` and this one are not the same scope.
+    ///
+    /// # Units
+    ///
+    /// A unit is engine-specific: the interpreter counts instructions executed,
+    /// the JIT counts poll-site crossings — one per loop back-edge, plus one on
+    /// entering a function that is polled at all. An *n*-iteration loop costs
+    /// *n* + 1 on the JIT and roughly an order of magnitude more on the
+    /// interpreter, so a budget means nothing portable unless the engine is
+    /// pinned with [`new_with_engine`](Self::new_with_engine).
+    ///
+    /// # What a budget does not stop
+    ///
+    /// The x86_64 JIT backend emits no poll for a function that never touches
+    /// its runtime pointer, so a trivial one — a body that only pushes a
+    /// constant, say — runs to completion on an exhausted budget rather than
+    /// trapping. The arm64 backend polls on every function entry, so the same
+    /// call traps there: this is a property of the backend, not of the engine
+    /// (zwasm/zwasm#466). A loop is polled on both, so it bounds how *little*
+    /// can be charged, not how long a guest can run.
+    ///
+    /// The start function is outside any budget, because it has already run by
+    /// the time there is an instance to arm — see [`new`](Self::new).
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn set_fuel(&self, store: &mut Store, fuel: u64) {
+        store.check(self.store_id);
+        unsafe { sys::zwasm_instance_set_fuel(self.ptr, fuel) }
+    }
+
+    /// Removes the budget, so the guest runs unmetered again.
+    ///
+    /// [`fuel_remaining`](Self::fuel_remaining) reports `None` afterwards,
+    /// whatever was left.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn disable_fuel(&self, store: &mut Store) {
+        store.check(self.store_id);
+        unsafe { sys::zwasm_instance_disable_fuel(self.ptr) }
+    }
+
+    /// The fuel left on this instance, or `None` when no budget is armed.
+    ///
+    /// `None` is not zero. An instance that ran out reports `Some(0)` and stays
+    /// metered until [`set_fuel`](Self::set_fuel) re-arms it or
+    /// [`disable_fuel`](Self::disable_fuel) removes it; one that was never
+    /// armed, or was disabled, reports `None`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn fuel_remaining(&self, store: &Store) -> Option<u64> {
+        store.check(self.store_id);
+        let mut fuel: u64 = 0;
+        unsafe { sys::zwasm_instance_fuel_remaining(self.ptr, &mut fuel) }.then_some(fuel)
     }
 
     /// The engine that actually ran this instance — [`EngineKind::Jit`] or
