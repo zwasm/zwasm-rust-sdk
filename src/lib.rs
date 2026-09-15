@@ -117,7 +117,7 @@ pub use crate::engine::Engine;
 pub use crate::error::{Error, TrapKind};
 pub use crate::func::Func;
 pub use crate::global::Global;
-pub use crate::instance::Instance;
+pub use crate::instance::{EngineKind, Instance};
 pub use crate::memory::Memory;
 pub use crate::module::Module;
 pub use crate::store::Store;

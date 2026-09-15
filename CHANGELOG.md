@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Updated the bundled zwasm C API to 2.7.0
 
 ### Added
+- `Instance::new_with_engine` and `Instance::engine`, wrapping `zwasm_instance_new_ex` and `zwasm_instance_engine`. The engine stays zwasm's choice by default — `Instance::new` is `new_with_engine` with `EngineKind::Auto`, which is what stock `wasm_instance_new` already passed — and the accessor reports which engine actually ran, never `Auto`, so a caller can record what the default resolved to instead of assuming it
 - `TrapKind::InvalidModule` and `TrapKind::Unsupported`, for the two kinds zwasm 2.7.0 added. Neither is a guest fault, and neither is something a different engine choice fixes where it appears: the first comes from instantiation when the JIT judges a module invalid, the second from a call the engine has no implementation for, and `AUTO` falls back to the interpreter for neither
 - The Zig target can be set with `ZWASM_ZIG_TARGET`, and is otherwise taken from `CARGO_ZIGBUILD_TARGET_<target>` or `CARGO_ZIGBUILD_TARGET` when cargo-zigbuild 0.23.4 or later exports them. Without any of these the triple is computed as before, so a build that sets nothing is unchanged. This is what lets a build ask for a glibc floor: the version in `--target x86_64-unknown-linux-gnu.2.28` never reached the C half before, so it was built for whatever glibc Zig defaults to
 

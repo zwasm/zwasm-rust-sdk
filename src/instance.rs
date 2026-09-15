@@ -7,6 +7,76 @@ use crate::{
     store::Store,
 };
 
+/// Which engine runs one instance, mirroring `ZWASM_ENGINE_*` in zwasm's
+/// `include/zwasm.h`.
+///
+/// Not [`Engine`](crate::engine::Engine) — that is `wasm_engine_t`, the
+/// environment a [`Store`] is built on. This names one instance's executor.
+///
+/// [`Auto`](Self::Auto) is a request; [`Instance::engine`] is the answer, and
+/// it never reports `Auto`.
+///
+/// Non-exhaustive because the kinds are C defines zwasm can append to: a kind
+/// added upstream should not be a breaking change here.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineKind {
+    /// `ZWASM_ENGINE_AUTO`, what stock `wasm_instance_new` passes.
+    ///
+    /// Compiles the module with the JIT, and instantiates the interpreter only
+    /// for a module the JIT *declines*. One it judges *invalid* is not retried:
+    /// instantiation fails with
+    /// [`TrapKind::InvalidModule`](crate::error::TrapKind::InvalidModule).
+    Auto,
+    /// `ZWASM_ENGINE_JIT`. Forces the native JIT, with no silent downgrade: a
+    /// declined module fails instantiation rather than falling back.
+    Jit,
+    /// `ZWASM_ENGINE_INTERP`. Forces the interpreter.
+    ///
+    /// Alone among the three it rejects a module importing
+    /// `wasi_snapshot_preview1` when the store has no WASI host configured. It
+    /// also cannot import from an instance the JIT backs, which zwasm states as
+    /// unsupported rather than as a defect (ADR-0228).
+    Interp,
+    /// A kind this crate does not know about, carrying the raw value.
+    ///
+    /// Reached when the linked zwasm reports a kind added after this crate's
+    /// conversion was written — a bumped submodule, say. Carrying the value
+    /// keeps that from being a panic, and lets the kind be handed back to
+    /// [`Instance::new_with_engine`], where that zwasm does know it.
+    ///
+    /// Asking for one zwasm does *not* know is not an error there: it maps any
+    /// unrecognized byte to [`Auto`](Self::Auto) rather than refusing, which
+    /// its C header does not say (zwasm/zwasm#459). So a kind this crate
+    /// invented, rather than read back, is a silent `Auto`.
+    Unknown(i32),
+}
+
+impl EngineKind {
+    /// The `engine_kind` byte `zwasm_instance_new_ex` takes, or `None` for an
+    /// [`Unknown`](Self::Unknown) that does not fit one — truncating it would
+    /// ask for a different engine, and nothing downstream would notice.
+    pub(crate) fn as_raw(self) -> Option<u8> {
+        match self {
+            EngineKind::Auto => Some(0),
+            EngineKind::Jit => Some(1),
+            EngineKind::Interp => Some(2),
+            EngineKind::Unknown(other) => u8::try_from(other).ok(),
+        }
+    }
+}
+
+impl From<i32> for EngineKind {
+    fn from(kind: i32) -> Self {
+        match kind {
+            0 => EngineKind::Auto,
+            1 => EngineKind::Jit,
+            2 => EngineKind::Interp,
+            other => EngineKind::Unknown(other),
+        }
+    }
+}
+
 /// An instantiated module, wrapping `wasm_instance_t`.
 ///
 /// A handle into a [`Store`]; the store owns the C instance and frees it on its
@@ -37,6 +107,38 @@ impl Instance {
     /// mirroring wasmtime. Passing them through would mix two stores' state on
     /// the C side.
     pub fn new(store: &mut Store, module: &Module, imports: &[Func]) -> Result<Self, Error> {
+        Self::new_with_engine(store, module, imports, EngineKind::Auto)
+    }
+
+    /// Instantiates `module` on a chosen engine, rather than leaving the choice
+    /// to zwasm.
+    ///
+    /// [`Instance::new`] is this with [`EngineKind::Auto`]; everything that doc
+    /// says about imports, WASI and start-function traps holds here too.
+    ///
+    /// # Errors
+    ///
+    /// An [`EngineKind::Unknown`] too large for the byte the C entry point
+    /// takes fails with [`Error::Message`] before zwasm is called at all.
+    ///
+    /// A module the chosen engine *declines* fails with [`Error::Message`]
+    /// naming the engine that was asked for. zwasm reports a decline as a null
+    /// instance with no trap and no reason, so the engine is the only thing
+    /// this can add (zwasm/zwasm#353). A module the JIT judges *invalid* fails
+    /// with [`TrapKind::InvalidModule`](crate::error::TrapKind::InvalidModule)
+    /// instead, on [`Auto`](EngineKind::Auto) and [`Jit`](EngineKind::Jit)
+    /// alike.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `module` or any import belongs to a different store, as
+    /// [`new`](Self::new) does.
+    pub fn new_with_engine(
+        store: &mut Store,
+        module: &Module,
+        imports: &[Func],
+        engine: EngineKind,
+    ) -> Result<Self, Error> {
         store.check(module.store_id);
         for &f in imports {
             store.check(f.store_id);
@@ -49,12 +151,25 @@ impl Instance {
             size: import_externs.len(),
             data: import_externs.as_ptr() as *mut _,
         };
+        let engine_kind = engine.as_raw().ok_or_else(|| {
+            Error::Message(format!("{engine:?} is not a selector zwasm can be given"))
+        })?;
         let mut trap: *mut sys::wasm_trap_t = std::ptr::null_mut();
-        let ptr =
-            unsafe { sys::wasm_instance_new(store.ptr, module.ptr, &import_extern_vec, &mut trap) };
+        let ptr = unsafe {
+            sys::zwasm_instance_new_ex(
+                store.ptr,
+                module.ptr,
+                &import_extern_vec,
+                &mut trap,
+                engine_kind,
+            )
+        };
 
         trap_into_result(trap, store)?;
-        let ptr = non_null(ptr, "failed to create instance")?;
+        let ptr = non_null(
+            ptr,
+            &format!("failed to create instance on the {engine:?} engine"),
+        )?;
         store.instances.push(ptr);
 
         Ok(Instance {
@@ -138,5 +253,29 @@ impl Instance {
             ptr,
             store_id: store.id,
         })
+    }
+
+    /// The engine that actually ran this instance — [`EngineKind::Jit`] or
+    /// [`EngineKind::Interp`], never [`EngineKind::Auto`].
+    ///
+    /// `Auto` is what you asked for; this is what you got — an instance `Auto`
+    /// handed to the interpreter because the JIT declined its module reports
+    /// `Interp`. Mirrors `zwasm_instance_engine` (zwasm's ADR-0200 D3).
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn engine(&self, store: &Store) -> EngineKind {
+        store.check(self.store_id);
+        let mut kind: i32 = 0;
+        // `zwasm_instance_engine` returns false only for a null instance, and an
+        // `Instance` only ever holds a pointer that passed `non_null`. Returning
+        // some kind here instead would mean inventing one the header says it
+        // never gives.
+        assert!(
+            unsafe { sys::zwasm_instance_engine(self.ptr, &mut kind) },
+            "zwasm_instance_engine refused a non-null instance"
+        );
+        EngineKind::from(kind)
     }
 }
