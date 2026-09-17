@@ -117,7 +117,7 @@ impl Func {
             )));
         }
 
-        let params_vals: Vec<sys::wasm_val_t> = params.iter().map(|a| a.clone().into()).collect();
+        let params_vals: Vec<sys::wasm_val_t> = params.iter().map(|&v| v.into()).collect();
         let params_vec = sys::wasm_val_vec_t {
             size: params_vals.len(),
             data: params_vals.as_ptr() as *mut _,
