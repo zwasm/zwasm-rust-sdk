@@ -39,8 +39,8 @@ fn grow(store: &mut Store, f: &Func, delta: i32) -> i32 {
     let mut results = vec![Val::I32(0); f.result_arity(store)];
     f.call(store, &[Val::I32(delta)], &mut results)
         .expect("growing past a cap is a return value, never a trap");
-    match &results[0] {
-        Val::I32(n) => *n,
+    match results[0] {
+        Val::I32(n) => n,
         other => panic!("memory.grow returned {other:?}"),
     }
 }
@@ -48,8 +48,8 @@ fn grow(store: &mut Store, f: &Func, delta: i32) -> i32 {
 fn size(store: &mut Store, f: &Func) -> i32 {
     let mut results = vec![Val::I32(0); f.result_arity(store)];
     f.call(store, &[], &mut results).unwrap();
-    match &results[0] {
-        Val::I32(n) => *n,
+    match results[0] {
+        Val::I32(n) => n,
         other => panic!("memory.size returned {other:?}"),
     }
 }

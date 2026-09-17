@@ -9,7 +9,7 @@ use zwasm_sys as sys;
 /// Converting a reference-kind `wasm_val_t` into a `Val` panics, so a function
 /// returning one cannot be called through [`Func::call`](crate::func::Func::call)
 /// yet.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Val {
     /// A 32 bit integer.
     I32(i32),
