@@ -375,8 +375,16 @@ impl Instance {
     /// Looks an exported global up by name, like wasmtime's
     /// `Instance::get_global`.
     ///
-    /// Returns `None` when nothing is exported under `name`, or when the export
-    /// is not a global.
+    /// Returns `None` when nothing is exported under `name`, when the export is
+    /// not a global, and — unlike wasmtime — when the global holds a reference
+    /// rather than a number.
+    ///
+    /// That third case is a limitation, not a choice. [`Val`](crate::val::Val)
+    /// models only the four numeric types, so [`Global::get`] on a `funcref`
+    /// global would panic and nothing on [`Global`] reports its type for a
+    /// caller to check first. Handing back a value whose only read method
+    /// crashes is worse than declining it. #45 tracks the representation that
+    /// would make this case reachable.
     ///
     /// Each call allocates a fresh C handle that the store owns until it drops,
     /// so looking the same export up in a loop grows the store. Resolve once and
@@ -389,6 +397,21 @@ impl Instance {
         let ptr = self.export_handle(store, name, |e| unsafe {
             sys::wasm_global_copy(sys::wasm_extern_as_global(e))
         })?;
+
+        let global_type = unsafe { sys::wasm_global_type(ptr) };
+        let content = unsafe { sys::wasm_globaltype_content(global_type) };
+        let kind = unsafe { sys::wasm_valtype_kind(content) };
+        unsafe { sys::wasm_globaltype_delete(global_type) };
+
+        let numeric = kind == sys::wasm_valkind_enum_WASM_I32 as u8
+            || kind == sys::wasm_valkind_enum_WASM_I64 as u8
+            || kind == sys::wasm_valkind_enum_WASM_F32 as u8
+            || kind == sys::wasm_valkind_enum_WASM_F64 as u8;
+        if !numeric {
+            unsafe { sys::wasm_global_delete(ptr) };
+            return None;
+        }
+
         store.globals.push(ptr);
 
         Some(Global {

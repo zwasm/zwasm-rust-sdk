@@ -25,6 +25,22 @@ const EXPORTS: &[u8] = &[
     0x00, 0x0b, 0x04, 0x00, 0x3f, 0x00, 0x0b,
 ];
 
+// (module (global (export "cb") funcref (ref.null func))
+//         (global (export "n") i32 (i32.const 7)))
+const REFERENCE_GLOBAL: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x06, 0x0b, 0x02, 0x70, 0x00, 0xd0, 0x70, 0x0b,
+    0x7f, 0x00, 0x41, 0x07, 0x0b, 0x07, 0x0a, 0x02, 0x02, 0x63, 0x62, 0x03, 0x00, 0x01, 0x6e, 0x03,
+    0x01,
+];
+
+fn instantiate_bytes(wasm: &[u8]) -> (Store, Instance) {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let module = Module::new(&mut store, wasm).unwrap();
+    let instance = Instance::new_with_engine(&mut store, &module, &[], EngineKind::Interp).unwrap();
+    (store, instance)
+}
+
 fn instantiate() -> (Store, Instance) {
     let engine = Engine::new().unwrap();
     let mut store = Store::new(&engine).unwrap();
@@ -109,6 +125,29 @@ fn a_host_side_grow_is_not_bounded_by_the_instance_cap() {
     let mut results = vec![Val::I32(0)];
     size.call(&mut store, &[], &mut results).unwrap();
     assert_eq!(results, [Val::I32(3)]);
+}
+
+// A global holding a reference is declined rather than returned. `Val` models
+// only the four numeric types, so `Global::get` on one would panic, and nothing
+// on `Global` reports its type for a caller to check first — so a handle here
+// would be one whose only read method crashes. wasmtime returns it, because its
+// `Val` carries reference variants; #45 is that gap.
+//
+// The numeric global beside it in the same module is the control: the filter
+// has to decline one kind, not globals in general.
+#[test]
+fn a_reference_global_is_declined_and_a_numeric_one_is_not() {
+    let (mut store, instance) = instantiate_bytes(REFERENCE_GLOBAL);
+
+    assert!(
+        instance.get_global(&mut store, "cb").is_none(),
+        "a funcref global has no representation to hand back"
+    );
+
+    let numeric = instance
+        .get_global(&mut store, "n")
+        .expect("a numeric global in the same module still resolves");
+    assert_eq!(numeric.get(&store), Val::I32(7));
 }
 
 #[test]
