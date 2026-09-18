@@ -5,6 +5,7 @@ use crate::{
     func::Func,
     module::Module,
     store::Store,
+    Global, Memory, Table,
 };
 
 /// Which engine runs one instance, mirroring `ZWASM_ENGINE_*` in zwasm's
@@ -204,58 +205,9 @@ impl Instance {
     ///
     /// Panics when `self` belongs to a different store.
     pub fn get_func(&self, store: &mut Store, name: &str) -> Option<Func> {
-        store.check(self.store_id);
-        let mut module_exports = sys::wasm_exporttype_vec_t {
-            size: 0,
-            data: std::ptr::null_mut(),
-        };
-        unsafe { sys::wasm_module_exports(self.module, &mut module_exports) };
-        let found_index = (0..module_exports.size).position(|i| {
-            let exporttype = unsafe { *module_exports.data.add(i) };
-            let name_ptr = unsafe { sys::wasm_exporttype_name(exporttype) };
-            // The name belongs to the exporttype, which lives until the vector is
-            // deleted below.
-            let name_vec = unsafe { &*name_ptr };
-            // An empty export name comes back as {size: 0, data: null} (zwasm
-            // vecNew, src/api/vec.zig), and from_raw_parts needs a non-null pointer
-            // even for a zero length.
-            let name_bytes: &[u8] = if name_vec.size == 0 || name_vec.data.is_null() {
-                &[]
-            } else {
-                unsafe { std::slice::from_raw_parts(name_vec.data as *const u8, name_vec.size) }
-            };
-            name_bytes == name.as_bytes()
-        });
-        unsafe { sys::wasm_exporttype_vec_delete(&mut module_exports) };
-        let index = found_index?;
-
-        // The index found above is reused against the instance's exports,
-        // which holds because zwasm decodes both vectors from the same
-        // `sections.decodeExports` and populates the instance one all-or-nothing
-        // (`src/api/instance.zig`). The bounds check below is what keeps a
-        // divergence from being read out of range rather than trusted.
-        let mut instance_exports = sys::wasm_extern_vec_t {
-            size: 0,
-            data: std::ptr::null_mut(),
-        };
-        unsafe { sys::wasm_instance_exports(self.ptr, &mut instance_exports) };
-
-        if index >= instance_exports.size {
-            unsafe { sys::wasm_extern_vec_delete(&mut instance_exports) };
-            return None;
-        }
-
-        let ext = unsafe { *instance_exports.data.add(index) };
-        // wasm_extern_as_func borrows out of the vector, so the handle has to be
-        // copied before the vector goes. A non-function export makes it null, and
-        // wasm_func_copy passes null through (zwasm cloneEntity,
-        // src/api/ref_base.zig:249), so the check below covers both cases.
-        let ptr = unsafe { sys::wasm_func_copy(sys::wasm_extern_as_func(ext)) };
-        unsafe { sys::wasm_extern_vec_delete(&mut instance_exports) };
-
-        if ptr.is_null() {
-            return None;
-        }
+        let ptr = self.export_handle(store, name, |e| unsafe {
+            sys::wasm_func_copy(sys::wasm_extern_as_func(e))
+        })?;
         store.funcs.push(ptr);
 
         Some(Func {
@@ -355,6 +307,12 @@ impl Instance {
     /// memory leaves exactly that state, and cannot be capped ahead of time —
     /// see [`new`](Self::new).
     ///
+    /// It caps the *guest*. A host that reaches the same memory with
+    /// [`get_memory`](Self::get_memory) and grows it through
+    /// [`Memory::grow`](crate::memory::Memory::grow) is not bounded by the cap
+    /// it set — measured, and not a way for a guest to escape one, since
+    /// nothing in a module can reach that call.
+    ///
     /// # Not the module's declared maximum
     ///
     /// A memory type can declare a maximum of its own, which belongs to the
@@ -380,6 +338,91 @@ impl Instance {
         unsafe { sys::zwasm_instance_clear_memory_pages_limit(self.ptr) }
     }
 
+    /// Looks an exported memory up by name, like wasmtime's
+    /// `Instance::get_memory`.
+    ///
+    /// Returns `None` when nothing is exported under `name`, or when the export
+    /// is not a memory.
+    ///
+    /// This is the only way to reach the memory a guest itself declares;
+    /// [`Memory::new`](crate::memory::Memory::new) builds one the host owns,
+    /// which no module can see.
+    ///
+    /// Each call allocates a fresh C handle that the store owns until it drops,
+    /// so looking the same export up in a loop grows the store. Resolve once and
+    /// keep the [`Memory`] — it is `Copy`.
+    ///
+    /// Growing this memory through [`Memory::grow`](crate::memory::Memory::grow)
+    /// is not bounded by
+    /// [`set_memory_pages_limit`](Self::set_memory_pages_limit): that caps the
+    /// guest's `memory.grow`, and the host reaching in here is a different door.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn get_memory(&self, store: &mut Store, name: &str) -> Option<Memory> {
+        let ptr = self.export_handle(store, name, |e| unsafe {
+            sys::wasm_memory_copy(sys::wasm_extern_as_memory(e))
+        })?;
+        store.memories.push(ptr);
+
+        Some(Memory {
+            ptr,
+            store_id: store.id,
+        })
+    }
+
+    /// Looks an exported global up by name, like wasmtime's
+    /// `Instance::get_global`.
+    ///
+    /// Returns `None` when nothing is exported under `name`, or when the export
+    /// is not a global.
+    ///
+    /// Each call allocates a fresh C handle that the store owns until it drops,
+    /// so looking the same export up in a loop grows the store. Resolve once and
+    /// keep the [`Global`] — it is `Copy`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn get_global(&self, store: &mut Store, name: &str) -> Option<Global> {
+        let ptr = self.export_handle(store, name, |e| unsafe {
+            sys::wasm_global_copy(sys::wasm_extern_as_global(e))
+        })?;
+        store.globals.push(ptr);
+
+        Some(Global {
+            ptr,
+            store_id: store.id,
+        })
+    }
+
+    /// Looks an exported table up by name, like wasmtime's
+    /// `Instance::get_table`.
+    ///
+    /// Returns `None` when nothing is exported under `name`, or when the export
+    /// is not a table. Reading and writing the elements of the table this
+    /// returns is still unwrapped — see [`Table`] for why.
+    ///
+    /// Each call allocates a fresh C handle that the store owns until it drops,
+    /// so looking the same export up in a loop grows the store. Resolve once and
+    /// keep the [`Table`] — it is `Copy`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `self` belongs to a different store.
+    pub fn get_table(&self, store: &mut Store, name: &str) -> Option<Table> {
+        let ptr = self.export_handle(store, name, |e| unsafe {
+            sys::wasm_table_copy(sys::wasm_extern_as_table(e))
+        })?;
+        store.tables.push(ptr);
+
+        Some(Table {
+            ptr,
+            store_id: store.id,
+        })
+    }
+
     /// The engine that actually ran this instance — [`EngineKind::Jit`] or
     /// [`EngineKind::Interp`], never [`EngineKind::Auto`].
     ///
@@ -402,5 +445,66 @@ impl Instance {
             "zwasm_instance_engine refused a non-null instance"
         );
         EngineKind::from(kind)
+    }
+
+    /// Resolves `name` to an export and hands the raw extern to `copy`, which
+    /// owns the per-kind conversion. Returns the copied handle, or `None`.
+    fn export_handle<T>(
+        &self,
+        store: &Store,
+        name: &str,
+        copy: impl FnOnce(*mut sys::wasm_extern_t) -> *mut T,
+    ) -> Option<*mut T> {
+        store.check(self.store_id);
+        let mut module_exports = sys::wasm_exporttype_vec_t {
+            size: 0,
+            data: std::ptr::null_mut(),
+        };
+        unsafe { sys::wasm_module_exports(self.module, &mut module_exports) };
+        let found_index = (0..module_exports.size).position(|i| {
+            let exporttype = unsafe { *module_exports.data.add(i) };
+            let name_ptr = unsafe { sys::wasm_exporttype_name(exporttype) };
+            // The name belongs to the exporttype, which lives until the vector is
+            // deleted below.
+            let name_vec = unsafe { &*name_ptr };
+            // An empty export name comes back as {size: 0, data: null} (zwasm
+            // vecNew, src/api/vec.zig), and from_raw_parts needs a non-null pointer
+            // even for a zero length.
+            let name_bytes: &[u8] = if name_vec.size == 0 || name_vec.data.is_null() {
+                &[]
+            } else {
+                unsafe { std::slice::from_raw_parts(name_vec.data as *const u8, name_vec.size) }
+            };
+            name_bytes == name.as_bytes()
+        });
+        unsafe { sys::wasm_exporttype_vec_delete(&mut module_exports) };
+        let index = found_index?;
+
+        // The index found above is reused against the instance's exports,
+        // which holds because zwasm decodes both vectors from the same
+        // `sections.decodeExports` and populates the instance one all-or-nothing
+        // (`src/api/instance.zig`). The bounds check below is what keeps a
+        // divergence from being read out of range rather than trusted.
+        let mut instance_exports = sys::wasm_extern_vec_t {
+            size: 0,
+            data: std::ptr::null_mut(),
+        };
+        unsafe { sys::wasm_instance_exports(self.ptr, &mut instance_exports) };
+
+        if index >= instance_exports.size {
+            unsafe { sys::wasm_extern_vec_delete(&mut instance_exports) };
+            return None;
+        }
+
+        let ext = unsafe { *instance_exports.data.add(index) };
+        // The extern borrows out of the vector, so `copy` has to take its own
+        // handle before the vector goes. An export of the wrong kind makes the
+        // conversion null and the copy passes null through (zwasm cloneEntity,
+        // `src/api/ref_base.zig:249`), which is why one null check below answers
+        // both "no such name" and "not that kind".
+        let ptr = copy(ext);
+        unsafe { sys::wasm_extern_vec_delete(&mut instance_exports) };
+
+        (!ptr.is_null()).then_some(ptr)
     }
 }
