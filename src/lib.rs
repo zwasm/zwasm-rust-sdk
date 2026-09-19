@@ -83,9 +83,11 @@
 //!
 //! [`Func::new_host`](func::Func::new_host) wraps a C callback so a guest can call
 //! into Rust, and [`Instance::new`](instance::Instance::new) takes the resulting
-//! functions as imports, in the order the module declares them. It is an `unsafe`
-//! function: the type is still built from raw `zwasm_sys` types, and a safe builder
-//! for function types is not implemented yet.
+//! functions as imports, in the order the module declares them —
+//! [`Module::imports`](module::Module::imports) reports that order, so a caller
+//! who did not write the module can still match its own functions by name. It is
+//! an `unsafe` function: the type is still built from raw `zwasm_sys` types, and
+//! a safe builder for function types is not implemented yet.
 //!
 //! ## Build requirements
 //!
@@ -119,7 +121,7 @@ pub use crate::func::Func;
 pub use crate::global::Global;
 pub use crate::instance::{EngineKind, Instance};
 pub use crate::memory::Memory;
-pub use crate::module::Module;
+pub use crate::module::{ExternKind, ImportType, Module};
 pub use crate::store::Store;
 pub use crate::table::Table;
 pub use crate::val::Val;

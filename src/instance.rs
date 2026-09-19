@@ -3,7 +3,7 @@ use zwasm_sys as sys;
 use crate::{
     error::{non_null, trap_into_result, Error},
     func::Func,
-    module::Module,
+    module::{name_bytes, Module},
     store::Store,
     Global, Memory, Table,
 };
@@ -93,7 +93,8 @@ impl Instance {
     /// Instantiates `module`, running its start function if it has one.
     ///
     /// `imports` has to line up with the module's import section, in declaration
-    /// order. Only function imports are supported; a module importing a memory,
+    /// order, which [`Module::imports`](crate::module::Module::imports)
+    /// reports. Only function imports are supported; a module importing a memory,
     /// global or table cannot be instantiated through this API yet.
     ///
     /// Imports of `wasi_snapshot_preview1.*` are resolved by the host installed
@@ -490,15 +491,7 @@ impl Instance {
             // The name belongs to the exporttype, which lives until the vector is
             // deleted below.
             let name_vec = unsafe { &*name_ptr };
-            // An empty export name comes back as {size: 0, data: null} (zwasm
-            // vecNew, src/api/vec.zig), and from_raw_parts needs a non-null pointer
-            // even for a zero length.
-            let name_bytes: &[u8] = if name_vec.size == 0 || name_vec.data.is_null() {
-                &[]
-            } else {
-                unsafe { std::slice::from_raw_parts(name_vec.data as *const u8, name_vec.size) }
-            };
-            name_bytes == name.as_bytes()
+            name_bytes(name_vec) == name.as_bytes()
         });
         unsafe { sys::wasm_exporttype_vec_delete(&mut module_exports) };
         let index = found_index?;
