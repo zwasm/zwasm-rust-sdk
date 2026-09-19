@@ -1,7 +1,8 @@
 //! Every public type prints. Two of them print in a shape worth pinning.
 
 use zwasm_sdk::{
-    Engine, Error, Func, Global, Instance, Memory, Module, Store, Table, TrapKind, Val, WasiConfig,
+    Engine, EngineKind, Error, ExternKind, Func, Global, ImportType, Instance, Memory, Module,
+    Store, Table, TrapKind, Val, WasiConfig,
 };
 
 // (module (func (export "f")))
@@ -18,9 +19,12 @@ fn assert_debug<T: std::fmt::Debug>() {}
 #[test]
 fn every_public_type_implements_debug() {
     assert_debug::<Engine>();
+    assert_debug::<EngineKind>();
     assert_debug::<Error>();
+    assert_debug::<ExternKind>();
     assert_debug::<Func>();
     assert_debug::<Global>();
+    assert_debug::<ImportType>();
     assert_debug::<Instance>();
     assert_debug::<Memory>();
     assert_debug::<Module>();
