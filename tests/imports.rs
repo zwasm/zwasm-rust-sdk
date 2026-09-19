@@ -100,6 +100,38 @@ fn every_kind_is_reported_in_declaration_order() {
     );
 }
 
+// (module (import "env" "before" (func))
+//         (import "env" "error" (tag (param i32)))
+//         (import "env" "after" (func)))
+const TAG_BETWEEN_FUNCS: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x60, 0x00, 0x00, 0x60, 0x01,
+    0x7f, 0x00, 0x02, 0x27, 0x03, 0x03, 0x65, 0x6e, 0x76, 0x06, 0x62, 0x65, 0x66, 0x6f, 0x72, 0x65,
+    0x00, 0x00, 0x03, 0x65, 0x6e, 0x76, 0x05, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x04, 0x00, 0x01, 0x03,
+    0x65, 0x6e, 0x76, 0x05, 0x61, 0x66, 0x74, 0x65, 0x72, 0x00, 0x00,
+];
+
+// zwasm drops tag imports — base `wasm.h` has no tag type, so its introspection
+// skips them (`src/api/module_introspect.zig:126`) — and the C call returns no
+// status, so nothing here can tell a shortened list from a shorter module.
+//
+// Pinned rather than left to be discovered: `imports`'s doc claims exactly this
+// shape, and zwasm/zwasm#475 asks for an entry point that is complete or
+// fails. When that lands, this test fails and the doc it guards comes off with
+// it.
+#[test]
+fn a_tag_import_is_dropped_and_shifts_what_follows() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let module = compile(&mut store, TAG_BETWEEN_FUNCS);
+
+    let imports = module.imports(&store);
+    assert_eq!(imports.len(), 2, "the module declares three");
+    assert_eq!((imports[0].module(), imports[0].name()), ("env", "before"));
+
+    // Declared at index 2, reported at index 1.
+    assert_eq!((imports[1].module(), imports[1].name()), ("env", "after"));
+}
+
 unsafe extern "C" fn returns_one(
     _args: *const zwasm_sys::wasm_val_vec_t,
     results: *mut zwasm_sys::wasm_val_vec_t,

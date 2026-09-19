@@ -26,6 +26,9 @@ pub enum ExternKind {
     /// `WASM_EXTERN_MEMORY`.
     Memory,
     /// `WASM_EXTERN_TAG`, from the exception-handling proposal.
+    ///
+    /// Present because this mirrors the C enum, not because it arrives:
+    /// [`Module::imports`] drops tag imports rather than reporting them.
     Tag,
     /// A kind this crate does not know about, carrying the raw value.
     Unknown(u8),
@@ -81,14 +84,32 @@ impl Module {
         })
     }
 
-    /// The module's import section, in declaration order.
+    /// What the module imports, in declaration order.
     ///
     /// [`Instance::new`](crate::instance::Instance::new) takes its imports by
     /// position, so this is what lets a caller order its own functions without
-    /// having read the module's source. The order here is that order.
+    /// having read the module's source.
     ///
-    /// Returns an empty `Vec` for a module that imports nothing; there is no
-    /// failure to report.
+    /// # It can be shorter than the import section
+    ///
+    /// Two things make zwasm drop an entry, and neither is visible from here:
+    /// the C call returns no status, so a shortened list looks exactly like a
+    /// module that imports less.
+    ///
+    /// A **tag import** is always dropped — base `wasm.h` has no tag type, so
+    /// zwasm skips it rather than reporting it. A module importing a function,
+    /// a tag and a function reports two entries, and the second function sits
+    /// at index 1 where the module declares it at 2. Such a module cannot be
+    /// instantiated through this crate either, but it fails with no reason
+    /// rather than with the tag it wanted.
+    ///
+    /// An **allocation failure inside zwasm** drops the entry it happened on,
+    /// or leaves a name empty. Only reachable under memory pressure, and
+    /// equally silent.
+    ///
+    /// zwasm/zwasm#475 asks for an entry point that is complete or fails.
+    /// Until there is one, a caller that must be certain has to decode the
+    /// import section itself.
     ///
     /// Unlike wasmtime's `Module::imports`, which lends names out of the
     /// module, these are owned: the names live in a C vector this call has to
