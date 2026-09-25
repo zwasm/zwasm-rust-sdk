@@ -9,22 +9,20 @@
 
 use zwasm_sdk::{Engine, Func, Store, Val};
 
-/// Runs `body` with the panic hook silenced, restoring it however `body` leaves.
+/// Runs `body` with the panic hook silenced, restoring it afterwards.
+///
+/// The restore cannot go in a `Drop`. `std::panic::set_hook` refuses to run on a
+/// panicking thread — it panics itself, `library/std/src/panicking.rs` checks
+/// `thread::panicking()` and says so — so a guard dropped during an unwind would
+/// panic while panicking and abort, with the silent hook still installed and the
+/// original message already lost. `catch_unwind` first, restore off the panicking
+/// path, then resume.
 fn quietly<T>(body: impl FnOnce() -> T) -> T {
-    type Hook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send>;
-
-    struct Restore(Option<Hook>);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            if let Some(hook) = self.0.take() {
-                std::panic::set_hook(hook);
-            }
-        }
-    }
-
-    let _restore = Restore(Some(std::panic::take_hook()));
+    let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
-    body()
+    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+    std::panic::set_hook(hook);
+    out.unwrap_or_else(|payload| std::panic::resume_unwind(payload))
 }
 
 // A panic unwinding out of an `extern "C"` function aborts the process, so the
