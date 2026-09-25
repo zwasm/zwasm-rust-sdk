@@ -29,6 +29,13 @@ fn call(store: &mut Store, f: &Func, args: &[Val]) -> Result<Vec<Val>, Error> {
 ///
 /// `catch_unwind` stops the unwind but the hook still prints, so a test that
 /// panics on purpose would leave a backtrace in the output of a passing run.
+///
+/// The hook is process-wide, so this would swallow a concurrent test's
+/// diagnostics. It does not, because this suite runs `--test-threads=1` — not
+/// for convenience but because zwasm is single-threaded per process and several
+/// of these tests trap on purpose (the CI workflow says so, and zwasm/zwasm#320
+/// is its exit condition). If that flag ever goes away, this helper goes with
+/// it.
 fn quietly<T>(body: impl FnOnce() -> T) -> T {
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
@@ -224,6 +231,25 @@ fn value_types_map_to_the_kinds_the_c_api_uses() {
         let host = Func::new(&mut store, &[ty], &[], |_, _| Ok(())).unwrap();
         assert_eq!(host.param_arity(&store), 1, "{ty:?} = {kind}");
     }
+}
+
+// A closure that returns without filling a result hands the guest the zero its
+// declared type starts at, rather than whatever the runtime left in the slot.
+// Pinned because `Func::new`'s doc states it, and because it is where the safe
+// path parts from `new_host`, whose contract is that every result is written.
+#[test]
+fn an_unwritten_result_is_the_zero_of_its_type() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let host = Func::new(&mut store, &[], &[ValType::F64], |_, _| Ok(())).unwrap();
+
+    let mut results = vec![Val::F64(9.9)];
+    host.call(&mut store, &[], &mut results).unwrap();
+    assert_eq!(
+        results,
+        [Val::F64(0.0)],
+        "the caller's value is overwritten"
+    );
 }
 
 #[test]

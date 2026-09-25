@@ -21,29 +21,87 @@ pub struct Func {
 }
 
 impl Func {
+    /// Creates a host function from a Rust closure, like wasmtime's `Func::new`.
+    ///
+    /// The result is meant to be passed to
+    /// [`Instance::new`](crate::instance::Instance::new) as an import.
+    /// [`Func::call`] also works, which runs the closure with no instance in
+    /// between.
+    ///
+    /// The closure is `Fn`, not `FnMut`: a guest can reach the same import
+    /// re-entrantly, so state has to go through a [`Cell`](std::cell::Cell) or
+    /// [`RefCell`](std::cell::RefCell) rather than through `&mut`. It is
+    /// neither `Send` nor `Sync` either, which is what lets it capture an
+    /// [`Rc`](std::rc::Rc): nothing in this crate can move a store to another
+    /// thread, so nothing can move the closure to one.
+    ///
+    /// The store owns the closure and drops it with itself. [`Func`] is a
+    /// `Copy` handle with no destructor, so letting one go frees nothing.
+    ///
+    /// # No access to the store
+    ///
+    /// The closure sees its arguments and nothing else — it cannot read the
+    /// caller's memory, which is what wasmtime's `Caller` is for. That is not a
+    /// simplification: zwasm's callback receives no instance, so there is
+    /// nothing to resolve an export against, and `env` is fixed when the
+    /// function is built while one function can be imported by many instances.
+    /// Asked upstream as zwasm/zwasm#486; a constructor that passes a caller
+    /// can be added beside this one without disturbing it.
+    ///
+    /// Calling back into the store is out for the same reason — there is no
+    /// `&mut Store` to be had inside a call that already holds one.
+    ///
+    /// # Unwritten results
+    ///
+    /// Each slot starts at a zero of its declared type, so a closure that
+    /// returns `Ok(())` without filling one hands the guest that zero. This is
+    /// where the safe path parts from [`new_host`](Self::new_host), whose
+    /// contract is that every result is written before returning; there, an
+    /// unwritten slot holds whatever the runtime left in it. A zero is a
+    /// defined answer rather than a good one, and telling "not written" from
+    /// "deliberately zero" would need a sentinel no wasm value type has.
+    ///
+    /// # Errors
+    ///
+    /// Fails when a value type, the function type, or the function itself
+    /// cannot be allocated.
+    ///
+    /// An `Err` from the closure becomes a trap, and so does a panic — a panic
+    /// crossing an `extern "C"` boundary would otherwise abort the process. So
+    /// does a result whose type does not match what `results` declared, which
+    /// is refused rather than passed on to the guest.
+    ///
+    /// Which way the function was reached decides what that trap carries, the
+    /// same way it does for [`new_host`](Self::new_host): called directly the
+    /// message survives, reached through a guest import zwasm substitutes a
+    /// generic one.
     pub fn new(
         store: &mut Store,
         params: &[ValType],
         results: &[ValType],
         f: impl Fn(&[Val], &mut [Val]) -> Result<(), Error> + 'static,
     ) -> Result<Self, Error> {
-        let env = HostEnv {
+        // Built before the box, so a failure here has nothing to unwind.
+        let functype = new_functype(params, results)?;
+
+        let env = Box::into_raw(Box::new(HostEnv {
             f: Box::new(f),
             store: store.ptr,
             results: results.to_vec(),
-        };
-        let functype = new_functype(params, results)?;
+        })) as *mut c_void;
+
         let func = unsafe {
-            sys::wasm_func_new_with_env(
-                store.ptr,
-                functype,
-                Some(trampoline),
-                Box::into_raw(Box::new(env)) as *mut c_void,
-                Some(finalize),
-            )
+            sys::wasm_func_new_with_env(store.ptr, functype, Some(trampoline), env, Some(finalize))
         };
         unsafe { sys::wasm_functype_delete(functype) };
-        let func = non_null(func, "failed to create function")?;
+
+        if func.is_null() {
+            // zwasm runs the finalizer for a function it created, and it
+            // created none — so the box is ours again, along with whatever the
+            // closure captured.
+            drop(unsafe { Box::from_raw(env as *mut HostEnv) });
+            return Err(Error::Message("failed to create host function".to_string()));
+        }
         store.funcs.push(func);
 
         Ok(Func {
