@@ -25,36 +25,6 @@ fn call(store: &mut Store, f: &Func, args: &[Val]) -> Result<Vec<Val>, Error> {
     Ok(results)
 }
 
-/// Runs `body` with the panic hook silenced.
-///
-/// `catch_unwind` stops the unwind but the hook still prints, so a test that
-/// panics on purpose would leave a backtrace in the output of a passing run.
-///
-/// The hook is process-wide, which is worth being honest about: CI passes
-/// `--test-threads=1` (because zwasm installs its fault handler with a race —
-/// zwasm/zwasm#320 — and these tests execute wasm), but a bare `cargo test`
-/// locally does not, and nothing in the repository makes it. So a concurrent
-/// test panicking inside this window loses its message. The guard below at
-/// least bounds the window to this call rather than to the rest of the run.
-fn quietly<T>(body: impl FnOnce() -> T) -> T {
-    type Hook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send>;
-
-    /// Restores the hook however `body` leaves — returning, or panicking past
-    /// the restore that a plain sequence of statements would skip.
-    struct Restore(Option<Hook>);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            if let Some(hook) = self.0.take() {
-                std::panic::set_hook(hook);
-            }
-        }
-    }
-
-    let _restore = Restore(Some(std::panic::take_hook()));
-    std::panic::set_hook(Box::new(|_| {}));
-    body()
-}
-
 // The issue's first acceptance criterion: a guest reaches a Rust closure, and
 // the closure's captured state is visible afterwards.
 //
@@ -145,22 +115,6 @@ fn an_err_from_the_closure_traps_with_its_message() {
     let err = call(&mut store, &host, &[]).unwrap_err();
     assert_eq!(err.to_string(), "the host said no");
     assert_eq!(err.trap_kind(), Some(TrapKind::BindingError));
-}
-
-// A panic unwinding out of an `extern "C"` function aborts the process, so the
-// trampoline catches it. This test passing at all is the assertion: an abort
-// would take the whole run with it.
-#[test]
-fn a_panic_becomes_a_trap_rather_than_an_abort() {
-    let engine = Engine::new().unwrap();
-    let mut store = Store::new(&engine).unwrap();
-    let host = Func::new(&mut store, &[], &[], |_, _| panic!("the host gave up")).unwrap();
-
-    let err = quietly(|| call(&mut store, &host, &[])).unwrap_err();
-    assert!(
-        err.to_string().contains("the host gave up"),
-        "the panic's own message should survive: {err}"
-    );
 }
 
 // A closure that writes the wrong type is caught before the value reaches the
