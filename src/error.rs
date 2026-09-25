@@ -197,6 +197,16 @@ pub(crate) unsafe fn trap_to_error(trap: *mut sys::wasm_trap_t, store: &Store) -
     }
 }
 
+pub(crate) fn error_to_trap(store: *mut sys::wasm_store_t, error: &Error) -> *mut sys::wasm_trap_t {
+    let msg = error.to_string();
+    let bytes = msg.as_bytes();
+    let message = sys::wasm_message_t {
+        size: bytes.len(),
+        data: bytes.as_ptr() as *mut _,
+    };
+    unsafe { sys::wasm_trap_new(store, &message) }
+}
+
 pub(crate) fn trap_into_result(trap: *mut sys::wasm_trap_t, store: &Store) -> Result<(), Error> {
     if trap.is_null() {
         Ok(())
