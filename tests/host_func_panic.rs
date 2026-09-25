@@ -40,4 +40,17 @@ fn a_panic_becomes_a_trap_rather_than_an_abort() {
         err.to_string().contains("the host gave up"),
         "the panic's own message should survive: {err}"
     );
+
+    // And `quietly` itself survives a panic in its body, which the version
+    // before it did not: restoring the hook from a `Drop` would have run
+    // `set_hook` on a panicking thread, panicked again, and aborted. Reaching
+    // the assert below is the whole proof — an abort would take the binary.
+    //
+    // Kept in this test rather than its own, so the file stays at one test and
+    // nothing here races over the hook.
+    let escaped = std::panic::catch_unwind(|| quietly(|| panic!("escaped")));
+    assert!(
+        escaped.is_err(),
+        "the panic has to arrive here rather than abort"
+    );
 }
