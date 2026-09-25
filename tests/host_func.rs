@@ -30,18 +30,29 @@ fn call(store: &mut Store, f: &Func, args: &[Val]) -> Result<Vec<Val>, Error> {
 /// `catch_unwind` stops the unwind but the hook still prints, so a test that
 /// panics on purpose would leave a backtrace in the output of a passing run.
 ///
-/// The hook is process-wide, so this would swallow a concurrent test's
-/// diagnostics. It does not, because this suite runs `--test-threads=1` — not
-/// for convenience but because zwasm is single-threaded per process and several
-/// of these tests trap on purpose (the CI workflow says so, and zwasm/zwasm#320
-/// is its exit condition). If that flag ever goes away, this helper goes with
-/// it.
+/// The hook is process-wide, which is worth being honest about: CI passes
+/// `--test-threads=1` (because zwasm installs its fault handler with a race —
+/// zwasm/zwasm#320 — and these tests execute wasm), but a bare `cargo test`
+/// locally does not, and nothing in the repository makes it. So a concurrent
+/// test panicking inside this window loses its message. The guard below at
+/// least bounds the window to this call rather than to the rest of the run.
 fn quietly<T>(body: impl FnOnce() -> T) -> T {
-    let hook = std::panic::take_hook();
+    type Hook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send>;
+
+    /// Restores the hook however `body` leaves — returning, or panicking past
+    /// the restore that a plain sequence of statements would skip.
+    struct Restore(Option<Hook>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            if let Some(hook) = self.0.take() {
+                std::panic::set_hook(hook);
+            }
+        }
+    }
+
+    let _restore = Restore(Some(std::panic::take_hook()));
     std::panic::set_hook(Box::new(|_| {}));
-    let out = body();
-    std::panic::set_hook(hook);
-    out
+    body()
 }
 
 // The issue's first acceptance criterion: a guest reaches a Rust closure, and
@@ -197,10 +208,11 @@ fn the_store_drops_the_closure_exactly_once() {
     assert_eq!(Rc::strong_count(&held), 1, "the store ran the finalizer");
 }
 
+// The signature reaches the functype intact. The `ValType` → C kind mapping is
+// checked directly in `src/val.rs`, where `kind` is reachable; from out here
+// only the arities can be read back.
 #[test]
-fn value_types_map_to_the_kinds_the_c_api_uses() {
-    use zwasm_sys as sys;
-
+fn a_declared_signature_reaches_the_function_type() {
     let engine = Engine::new().unwrap();
     let mut store = Store::new(&engine).unwrap();
 
@@ -219,17 +231,10 @@ fn value_types_map_to_the_kinds_the_c_api_uses() {
     assert_eq!(host.param_arity(&store), 2);
     assert_eq!(host.result_arity(&store), 1);
 
-    // And the kinds themselves, against the C constants rather than a repeat of
-    // the mapping.
-    let pairs: &[(ValType, u32)] = &[
-        (ValType::I32, sys::wasm_valkind_enum_WASM_I32),
-        (ValType::I64, sys::wasm_valkind_enum_WASM_I64),
-        (ValType::F32, sys::wasm_valkind_enum_WASM_F32),
-        (ValType::F64, sys::wasm_valkind_enum_WASM_F64),
-    ];
-    for &(ty, kind) in pairs {
+    for ty in [ValType::I32, ValType::I64, ValType::F32, ValType::F64] {
         let host = Func::new(&mut store, &[ty], &[], |_, _| Ok(())).unwrap();
-        assert_eq!(host.param_arity(&store), 1, "{ty:?} = {kind}");
+        assert_eq!(host.param_arity(&store), 1, "{ty:?}");
+        assert_eq!(host.result_arity(&store), 0, "{ty:?}");
     }
 }
 

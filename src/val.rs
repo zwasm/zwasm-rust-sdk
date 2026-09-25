@@ -110,3 +110,38 @@ impl ValType {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `kind` is `pub(crate)`, so this is the only place the mapping can be
+    // compared against the C constants rather than restated.
+    #[test]
+    fn valtype_kinds_are_the_c_constants() {
+        let pairs: &[(ValType, u32)] = &[
+            (ValType::I32, sys::wasm_valkind_enum_WASM_I32),
+            (ValType::I64, sys::wasm_valkind_enum_WASM_I64),
+            (ValType::F32, sys::wasm_valkind_enum_WASM_F32),
+            (ValType::F64, sys::wasm_valkind_enum_WASM_F64),
+        ];
+        for &(ty, kind) in pairs {
+            assert_eq!(ty.kind(), kind as u8, "{ty:?}");
+        }
+    }
+
+    // A `Val` reports the kind its `ValType` declares, which is what the
+    // trampoline's result check compares.
+    #[test]
+    fn a_val_reports_the_kind_of_its_type() {
+        let pairs: &[(Val, ValType)] = &[
+            (Val::I32(0), ValType::I32),
+            (Val::I64(0), ValType::I64),
+            (Val::F32(0.0), ValType::F32),
+            (Val::F64(0.0), ValType::F64),
+        ];
+        for (val, ty) in pairs {
+            assert_eq!(val.kind(), ty.kind(), "{ty:?}");
+        }
+    }
+}

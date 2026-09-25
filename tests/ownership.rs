@@ -49,6 +49,8 @@ fn new_add_one_host_func(store: &mut Store) -> Func {
     .unwrap()
 }
 
+// One store owning every entity kind; the drop frees funcs before instances,
+// instances before modules, and everything before the store, on one thread.
 #[test]
 fn store_drop_frees_everything() {
     let engine = Engine::new().unwrap();

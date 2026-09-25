@@ -12,8 +12,8 @@ use crate::{
 ///
 /// A handle into a [`Store`]; the store owns the C function and frees it on its
 /// own drop, so the handle is `Copy` and carries no destructor. Obtained from an
-/// [`Instance`](crate::instance::Instance) export, or created from a Rust
-/// callback with [`Func::new_host`].
+/// [`Instance`](crate::instance::Instance) export, built from a Rust closure
+/// with [`Func::new`], or from a raw C callback with [`Func::new_host`].
 #[derive(Debug, Clone, Copy)]
 pub struct Func {
     pub(crate) ptr: *mut sys::wasm_func_t,
@@ -96,9 +96,10 @@ impl Func {
         unsafe { sys::wasm_functype_delete(functype) };
 
         if func.is_null() {
-            // zwasm runs the finalizer for a function it created, and it
-            // created none — so the box is ours again, along with whatever the
-            // closure captured.
+            // The box is ours again, along with whatever the closure captured.
+            // Every `return null` in zwasm's `funcNewImpl`
+            // (`src/api/extern_new.zig`) frees its own allocations and stores
+            // the finalizer without ever calling it, so nothing else will.
             drop(unsafe { Box::from_raw(env as *mut HostEnv) });
             return Err(Error::Message("failed to create host function".to_string()));
         }
@@ -174,9 +175,10 @@ impl Func {
     ///
     /// A guest trap is returned as [`Error::Trap`] carrying the trap message.
     ///
-    /// A function from [`Func::new_host`] can be called this way too, which
-    /// runs its callback directly with no instance in between. See there for
-    /// what a trap from the callback carries on each path.
+    /// A host function — from [`Func::new`] or [`new_host`](Self::new_host) —
+    /// can be called this way too, which runs its body directly with no
+    /// instance in between. See either for what a trap from it carries on each
+    /// path.
     ///
     /// # Errors
     ///
@@ -234,10 +236,16 @@ impl Func {
 /// What a host function's body is, once boxed.
 type HostCallback = dyn Fn(&[Val], &mut [Val]) -> Result<(), Error>;
 
+/// The payload [`Func::new`] hands to C, recovered by the trampoline and freed
+/// by the finalizer.
 struct HostEnv {
     f: Box<HostCallback>,
-    store: *mut sys::wasm_store_t, // wasm_trap_new に要る
-    results: Vec<ValType>,         // 結果スロットの初期化と型検査に要る
+    /// Needed by `wasm_trap_new`. Valid for as long as the callback can run:
+    /// the store owns the func, so it outlives every call through it.
+    store: *mut sys::wasm_store_t,
+    /// Needed to size and type the result slots, which the C side does not
+    /// describe to the callback.
+    results: Vec<ValType>,
 }
 
 /// Calls the boxed closure on zwasm's behalf.
@@ -267,6 +275,16 @@ unsafe extern "C" fn trampoline(
         (env.f)(&args, &mut out)?;
 
         // Checked after the closure ran, because this is about what it wrote.
+        // The count comes from the same place the slots do, so a mismatch means
+        // zwasm disagreeing with the functype it was given — refused rather
+        // than truncated, for the same reason a wrong type is.
+        let slots = unsafe { (*results).size };
+        if out.len() != slots {
+            return Err(Error::Message(format!(
+                "host function wrote {} results into {slots} slots",
+                out.len()
+            )));
+        }
         for (i, (val, ty)) in out.iter().zip(&env.results).enumerate() {
             if val.kind() != ty.kind() {
                 return Err(Error::Message(format!(
@@ -322,10 +340,20 @@ unsafe fn write_vals(ptr: *mut sys::wasm_val_vec_t, vals: &[Val]) {
     }
 }
 
+/// Frees the payload. zwasm calls this once, when the store drops the func.
+///
+/// Dropping the closure here runs the `Drop` of whatever it captured, inside an
+/// `extern "C"` frame — so a capture that panics on drop aborts the process.
+/// Nothing can be done about that from here, and a panicking `Drop` is already
+/// a program that cannot unwind cleanly.
 unsafe extern "C" fn finalize(env: *mut c_void) {
     drop(Box::from_raw(env as *mut HostEnv));
 }
 
+/// Builds a `wasm_valtype_vec_t` holding one valtype per entry.
+///
+/// Ownership walks up: the vector takes every valtype handed to it, so a failure
+/// is only ours to clean up at the step it happened on.
 fn valtype_vec(types: &[ValType]) -> Result<sys::wasm_valtype_vec_t, Error> {
     let mut valtypes: Vec<*mut sys::wasm_valtype_t> = Vec::with_capacity(types.len());
     for ty in types {
@@ -354,6 +382,11 @@ fn valtype_vec(types: &[ValType]) -> Result<sys::wasm_valtype_vec_t, Error> {
     Ok(out)
 }
 
+/// Builds a `wasm_functype_t` from the two type lists.
+///
+/// `wasm_functype_new` takes both vectors only when it succeeds, so the null
+/// path has to delete them — the same shape `wasm_globaltype_new` has in
+/// `global.rs`. Deleting a vector frees its valtypes too.
 fn new_functype(
     params: &[ValType],
     results: &[ValType],
