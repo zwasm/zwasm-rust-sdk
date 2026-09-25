@@ -81,13 +81,19 @@
 //!
 //! ## Host functions
 //!
-//! [`Func::new_host`](func::Func::new_host) wraps a C callback so a guest can call
-//! into Rust, and [`Instance::new`](instance::Instance::new) takes the resulting
-//! functions as imports, in the order the module declares them —
+//! [`Func::new`](func::Func::new) wraps a Rust closure so a guest can call into
+//! Rust, taking the signature as [`ValType`] lists, and
+//! [`Instance::new`](instance::Instance::new) takes the resulting functions as
+//! imports, in the order the module declares them —
 //! [`Module::imports`](module::Module::imports) reports that order, so a caller
-//! who did not write the module can still match its own functions by name. It is
-//! an `unsafe` function: the type is still built from raw `zwasm_sys` types, and
-//! a safe builder for function types is not implemented yet.
+//! who did not write the module can still match its own functions by name.
+//!
+//! The closure sees its arguments and nothing else: reading the caller's memory
+//! needs an instance that zwasm's callback does not carry. [`Func::new_host`]
+//! remains for an embedder that already has an `extern "C"` callback, and is
+//! `unsafe` because the function type is built from raw `zwasm_sys` types.
+//!
+//! [`Func::new_host`]: func::Func::new_host
 //!
 //! ## Build requirements
 //!
@@ -124,7 +130,7 @@ pub use crate::memory::Memory;
 pub use crate::module::{ExternKind, ImportType, Module};
 pub use crate::store::Store;
 pub use crate::table::Table;
-pub use crate::val::Val;
+pub use crate::val::{Val, ValType};
 pub use crate::wasi::WasiConfig;
 
 /// The version of the zwasm C library this binary is linked against.
