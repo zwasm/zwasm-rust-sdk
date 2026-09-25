@@ -101,7 +101,7 @@ Imports of `wasi_snapshot_preview1.*` then resolve against that host. WASI 0.1 i
 
 ## Safety and Usage Notes
 
-All FFI unsafety is encapsulated, except for host functions: `Func::new_host` still takes a raw `wasm_functype_t` and a C callback. A safe builder for function types is not implemented yet.
+All FFI unsafety is encapsulated. A host function is a Rust closure through `Func::new`, which takes its signature as `ValType` lists; the closure sees its arguments and not the caller's memory, because zwasm's callback carries no instance to resolve an export against. `Func::new_host` remains for an embedder that already has an `extern "C"` callback, and is the one `unsafe` entry point left.
 
 `Engine` is `Send + Sync`. `Store` and everything derived from it are single-threaded.
 

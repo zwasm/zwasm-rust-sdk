@@ -66,3 +66,47 @@ impl From<sys::wasm_val_t> for Val {
         }
     }
 }
+
+/// A value type, for declaring a host function's signature to
+/// [`Func::new`](crate::func::Func::new).
+///
+/// The same four types [`Val`] carries. Reference types have none here either,
+/// and for the same reason — see #45.
+///
+/// Non-exhaustive because that list is expected to grow.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValType {
+    /// A 32 bit integer.
+    I32,
+    /// A 64 bit integer.
+    I64,
+    /// A 32 bit float.
+    F32,
+    /// A 64 bit float.
+    F64,
+}
+
+impl ValType {
+    /// A zero of this type, for initialising a result slot.
+    ///
+    /// Filling every slot with `Val::I32(0)` instead would hand an `f64` result
+    /// the wrong kind before the callback has written anything.
+    pub(crate) fn zero(self) -> Val {
+        match self {
+            ValType::I32 => Val::I32(0),
+            ValType::I64 => Val::I64(0),
+            ValType::F32 => Val::F32(0.0),
+            ValType::F64 => Val::F64(0.0),
+        }
+    }
+
+    pub(crate) fn kind(self) -> u8 {
+        match self {
+            ValType::I32 => sys::wasm_valkind_enum_WASM_I32 as u8,
+            ValType::I64 => sys::wasm_valkind_enum_WASM_I64 as u8,
+            ValType::F32 => sys::wasm_valkind_enum_WASM_F32 as u8,
+            ValType::F64 => sys::wasm_valkind_enum_WASM_F64 as u8,
+        }
+    }
+}

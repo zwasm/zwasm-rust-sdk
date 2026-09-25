@@ -1,9 +1,11 @@
+use std::os::raw::c_void;
+
 use zwasm_sys as sys;
 
 use crate::{
-    error::{non_null, trap_into_result, Error},
+    error::{error_to_trap, non_null, trap_into_result, Error},
     store::Store,
-    val::Val,
+    val::{Val, ValType},
 };
 
 /// A callable function, wrapping `wasm_func_t`.
@@ -19,6 +21,37 @@ pub struct Func {
 }
 
 impl Func {
+    pub fn new(
+        store: &mut Store,
+        params: &[ValType],
+        results: &[ValType],
+        f: impl Fn(&[Val], &mut [Val]) -> Result<(), Error> + 'static,
+    ) -> Result<Self, Error> {
+        let env = HostEnv {
+            f: Box::new(f),
+            store: store.ptr,
+            results: results.to_vec(),
+        };
+        let functype = new_functype(params, results)?;
+        let func = unsafe {
+            sys::wasm_func_new_with_env(
+                store.ptr,
+                functype,
+                Some(trampoline),
+                Box::into_raw(Box::new(env)) as *mut c_void,
+                Some(finalize),
+            )
+        };
+        unsafe { sys::wasm_functype_delete(functype) };
+        let func = non_null(func, "failed to create function")?;
+        store.funcs.push(func);
+
+        Ok(Func {
+            ptr: func,
+            store_id: store.id,
+        })
+    }
+
     /// Creates a host function the guest can call.
     ///
     /// The result is meant to be passed to
@@ -138,4 +171,148 @@ impl Func {
 
         Ok(())
     }
+}
+
+/// What a host function's body is, once boxed.
+type HostCallback = dyn Fn(&[Val], &mut [Val]) -> Result<(), Error>;
+
+struct HostEnv {
+    f: Box<HostCallback>,
+    store: *mut sys::wasm_store_t, // wasm_trap_new に要る
+    results: Vec<ValType>,         // 結果スロットの初期化と型検査に要る
+}
+
+/// Calls the boxed closure on zwasm's behalf.
+///
+/// Everything is inside `catch_unwind`: a panic crossing an `extern "C"`
+/// boundary aborts the process, and one guest call must not be able to do that.
+/// A panic becomes a trap, like any other failure the closure reports.
+unsafe extern "C" fn trampoline(
+    env: *mut c_void,
+    args: *const sys::wasm_val_vec_t,
+    results: *mut sys::wasm_val_vec_t,
+) -> *mut sys::wasm_trap_t {
+    // The box `Func::new` leaked, alive until the store frees this func. The
+    // store pointer is valid for the same reason: the store owns the func, so
+    // it outlives every call made through it.
+    let env = unsafe { &*(env as *const HostEnv) };
+
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let args = unsafe { read_vals(args) };
+
+        // Built from the declared types, not from what arrived: zwasm fills
+        // every result slot with `{kind: i32, of: 0}` before calling
+        // (`src/api/instance.zig`), so reading them back would hand an `f64`
+        // result the wrong kind.
+        let mut out: Vec<Val> = env.results.iter().map(|ty| ty.zero()).collect();
+
+        (env.f)(&args, &mut out)?;
+
+        // Checked after the closure ran, because this is about what it wrote.
+        for (i, (val, ty)) in out.iter().zip(&env.results).enumerate() {
+            if val.kind() != ty.kind() {
+                return Err(Error::Message(format!(
+                    "host function result {i}: expected {ty:?}, got {val:?}"
+                )));
+            }
+        }
+
+        unsafe { write_vals(results, &out) };
+        Ok(())
+    }));
+
+    match outcome {
+        Ok(Ok(())) => std::ptr::null_mut(),
+        Ok(Err(e)) => error_to_trap(env.store, &e),
+        Err(payload) => {
+            let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                format!("host function panicked: {s}")
+            } else if let Some(s) = payload.downcast_ref::<String>() {
+                format!("host function panicked: {s}")
+            } else {
+                "host function panicked".to_string()
+            };
+            error_to_trap(env.store, &Error::Message(msg))
+        }
+    }
+}
+
+/// Copies the arguments out of the C vector.
+///
+/// A zero-length vector arrives as `{size: 0, data: null}`, and
+/// `from_raw_parts` needs a non-null pointer even for a zero length.
+unsafe fn read_vals(ptr: *const sys::wasm_val_vec_t) -> Vec<Val> {
+    let vals_vec = unsafe { &*ptr };
+    if vals_vec.size == 0 || vals_vec.data.is_null() {
+        return Vec::new();
+    }
+    unsafe { std::slice::from_raw_parts(vals_vec.data, vals_vec.size) }
+        .iter()
+        .map(|&v| Val::from(v))
+        .collect()
+}
+
+/// Writes the results back into the C vector, up to the slots it has.
+unsafe fn write_vals(ptr: *mut sys::wasm_val_vec_t, vals: &[Val]) {
+    let vals_vec = unsafe { &mut *ptr };
+    if vals_vec.size == 0 || vals_vec.data.is_null() {
+        return;
+    }
+    let slots = unsafe { std::slice::from_raw_parts_mut(vals_vec.data, vals_vec.size) };
+    for (slot, val) in slots.iter_mut().zip(vals) {
+        *slot = (*val).into();
+    }
+}
+
+unsafe extern "C" fn finalize(env: *mut c_void) {
+    drop(Box::from_raw(env as *mut HostEnv));
+}
+
+fn valtype_vec(types: &[ValType]) -> Result<sys::wasm_valtype_vec_t, Error> {
+    let mut valtypes: Vec<*mut sys::wasm_valtype_t> = Vec::with_capacity(types.len());
+    for ty in types {
+        let valtype = unsafe { sys::wasm_valtype_new(ty.kind()) };
+        if valtype.is_null() {
+            for valtype in valtypes {
+                unsafe { sys::wasm_valtype_delete(valtype) }
+            }
+            return Err(Error::Message("failed to create value type".to_string()));
+        }
+        valtypes.push(valtype);
+    }
+    let mut out = sys::wasm_valtype_vec_t {
+        size: 0,
+        data: std::ptr::null_mut(),
+    };
+    unsafe { sys::wasm_valtype_vec_new(&mut out, valtypes.len(), valtypes.as_ptr()) };
+    if !types.is_empty() && out.data.is_null() {
+        for valtype in valtypes {
+            unsafe { sys::wasm_valtype_delete(valtype) }
+        }
+        return Err(Error::Message(
+            "failed to create value type list".to_string(),
+        ));
+    }
+    Ok(out)
+}
+
+fn new_functype(
+    params: &[ValType],
+    results: &[ValType],
+) -> Result<*mut sys::wasm_functype_t, Error> {
+    let mut params_vec = valtype_vec(params)?;
+    let mut results_vec = match valtype_vec(results) {
+        Ok(v) => v,
+        Err(e) => {
+            unsafe { sys::wasm_valtype_vec_delete(&mut params_vec) };
+            return Err(e);
+        }
+    };
+    let functype = unsafe { sys::wasm_functype_new(&mut params_vec, &mut results_vec) };
+    if functype.is_null() {
+        unsafe { sys::wasm_valtype_vec_delete(&mut params_vec) };
+        unsafe { sys::wasm_valtype_vec_delete(&mut results_vec) };
+        return Err(Error::Message("failed to create function type".to_string()));
+    }
+    Ok(functype)
 }

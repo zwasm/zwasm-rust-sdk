@@ -11,6 +11,7 @@
 // root. Adding the root re-exports did not remove the longer paths, and this
 // file is what would stop compiling if a later change did.
 use zwasm_sdk::engine::Engine;
+use zwasm_sdk::error::Error;
 use zwasm_sdk::func::Func;
 use zwasm_sdk::global::Global;
 use zwasm_sdk::instance::Instance;
@@ -18,7 +19,7 @@ use zwasm_sdk::memory::Memory;
 use zwasm_sdk::module::Module;
 use zwasm_sdk::store::Store;
 use zwasm_sdk::table::Table;
-use zwasm_sdk::val::Val;
+use zwasm_sdk::val::{Val, ValType};
 
 // (func (export "f") (result i32) (i32.const 42))
 const RETURN42_WASM: &[u8] = &[
@@ -36,42 +37,18 @@ const CALLBACK_WASM: &[u8] = &[
     0x05, 0x01, 0x01, 0x66, 0x00, 0x01, 0x0a, 0x08, 0x01, 0x06, 0x00, 0x20, 0x00, 0x10, 0x00, 0x0b,
 ];
 
-unsafe extern "C" fn add_one(
-    args: *const zwasm_sys::wasm_val_vec_t,
-    results: *mut zwasm_sys::wasm_val_vec_t,
-) -> *mut zwasm_sys::wasm_trap_t {
-    let arg = (*args).data;
-    let res = (*results).data;
-    (*res).kind = zwasm_sys::wasm_valkind_enum_WASM_I32 as u8;
-    (*res).of.i32_ = (*arg).of.i32_ + 1;
-    std::ptr::null_mut()
-}
-
+/// A `(i32) -> i32` host function that adds one.
 fn new_add_one_host_func(store: &mut Store) -> Func {
-    let mut params = zwasm_sys::wasm_valtype_vec_t {
-        size: 0,
-        data: std::ptr::null_mut(),
-    };
-    let mut results = zwasm_sys::wasm_valtype_vec_t {
-        size: 0,
-        data: std::ptr::null_mut(),
-    };
-    let param_type =
-        unsafe { zwasm_sys::wasm_valtype_new(zwasm_sys::wasm_valkind_enum_WASM_I32 as u8) };
-    let result_type =
-        unsafe { zwasm_sys::wasm_valtype_new(zwasm_sys::wasm_valkind_enum_WASM_I32 as u8) };
-    unsafe {
-        zwasm_sys::wasm_valtype_vec_new(&mut params, 1, &param_type);
-        zwasm_sys::wasm_valtype_vec_new(&mut results, 1, &result_type);
-    };
-    let functype = unsafe { zwasm_sys::wasm_functype_new(&mut params, &mut results) };
-    let host_fn = unsafe { Func::new_host(store, functype, Some(add_one)) }.unwrap();
-    unsafe { zwasm_sys::wasm_functype_delete(functype) };
-    host_fn
+    Func::new(store, &[ValType::I32], &[ValType::I32], |args, results| {
+        let Val::I32(n) = args[0] else {
+            return Err(Error::Message("expected an i32".into()));
+        };
+        results[0] = Val::I32(n + 1);
+        Ok(())
+    })
+    .unwrap()
 }
 
-// One store owning every entity kind; the drop frees funcs before instances,
-// instances before modules, and everything before the store, on one thread.
 #[test]
 fn store_drop_frees_everything() {
     let engine = Engine::new().unwrap();

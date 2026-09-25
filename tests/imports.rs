@@ -4,7 +4,7 @@
 //! caller who wrote the module. These read the import section so a caller who
 //! did not can order its own functions by name.
 
-use zwasm_sdk::{Engine, ExternKind, Func, Instance, Module, Store, Val};
+use zwasm_sdk::{Engine, ExternKind, Func, Instance, Module, Store, Val, ValType};
 
 // (module (import "env" "h" (func)))
 const ONE_FUNC: &[u8] = &[
@@ -132,47 +132,13 @@ fn a_tag_import_is_dropped_and_shifts_what_follows() {
     assert_eq!((imports[1].module(), imports[1].name()), ("env", "after"));
 }
 
-unsafe extern "C" fn returns_one(
-    _args: *const zwasm_sys::wasm_val_vec_t,
-    results: *mut zwasm_sys::wasm_val_vec_t,
-) -> *mut zwasm_sys::wasm_trap_t {
-    let res = (*results).data;
-    (*res).kind = zwasm_sys::wasm_valkind_enum_WASM_I32 as u8;
-    (*res).of.i32_ = 1;
-    std::ptr::null_mut()
-}
-
-unsafe extern "C" fn returns_two(
-    _args: *const zwasm_sys::wasm_val_vec_t,
-    results: *mut zwasm_sys::wasm_val_vec_t,
-) -> *mut zwasm_sys::wasm_trap_t {
-    let res = (*results).data;
-    (*res).kind = zwasm_sys::wasm_valkind_enum_WASM_I32 as u8;
-    (*res).of.i32_ = 2;
-    std::ptr::null_mut()
-}
-
-/// A `() -> i32` host function. Built by hand because `Func::new_host` is the
-/// only door today — #30 is the safe one.
-fn host_func(store: &mut Store, callback: zwasm_sys::wasm_func_callback_t) -> Func {
-    let mut params = zwasm_sys::wasm_valtype_vec_t {
-        size: 0,
-        data: std::ptr::null_mut(),
-    };
-    let mut results = zwasm_sys::wasm_valtype_vec_t {
-        size: 0,
-        data: std::ptr::null_mut(),
-    };
-    let result_type =
-        unsafe { zwasm_sys::wasm_valtype_new(zwasm_sys::wasm_valkind_enum_WASM_I32 as u8) };
-    unsafe {
-        zwasm_sys::wasm_valtype_vec_new_empty(&mut params);
-        zwasm_sys::wasm_valtype_vec_new(&mut results, 1, &result_type);
-    };
-    let functype = unsafe { zwasm_sys::wasm_functype_new(&mut params, &mut results) };
-    let func = unsafe { Func::new_host(store, functype, callback) }.unwrap();
-    unsafe { zwasm_sys::wasm_functype_delete(functype) };
-    func
+/// A `() -> i32` host function returning `n`.
+fn constant_host_func(store: &mut Store, n: i32) -> Func {
+    Func::new(store, &[], &[ValType::I32], move |_, results| {
+        results[0] = Val::I32(n);
+        Ok(())
+    })
+    .unwrap()
 }
 
 // The issue's second acceptance criterion, and the reason this exists: order a
@@ -189,8 +155,8 @@ fn imports_can_order_the_funcs_instance_new_expects() {
     let module = compile(&mut store, TWO_FUNCS);
 
     // What the host has, keyed the way a host thinks: by name.
-    let first = host_func(&mut store, Some(returns_one));
-    let second = host_func(&mut store, Some(returns_two));
+    let first = constant_host_func(&mut store, 1);
+    let second = constant_host_func(&mut store, 2);
 
     // What the module wants, in the order it wants it.
     let ordered: Vec<Func> = module
