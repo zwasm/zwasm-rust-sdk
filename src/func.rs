@@ -328,7 +328,11 @@ unsafe fn read_vals(ptr: *const sys::wasm_val_vec_t) -> Vec<Val> {
         .collect()
 }
 
-/// Writes the results back into the C vector, up to the slots it has.
+/// Writes the results into the C vector.
+///
+/// The caller has already refused a length that disagrees with the slots, so the
+/// `zip` below exhausts both. A zero-length vector still arrives as
+/// `{size: 0, data: null}`, which is the guard.
 unsafe fn write_vals(ptr: *mut sys::wasm_val_vec_t, vals: &[Val]) {
     let vals_vec = unsafe { &mut *ptr };
     if vals_vec.size == 0 || vals_vec.data.is_null() {
