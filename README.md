@@ -103,7 +103,7 @@ Imports of `wasi_snapshot_preview1.*` then resolve against that host. WASI 0.1 i
 
 All FFI unsafety is encapsulated. A host function is a Rust closure through `Func::new`, which takes its signature as `ValType` lists; the closure sees its arguments and not the caller's memory, because zwasm's callback carries no instance to resolve an export against. `Func::new_host` remains for an embedder that already has an `extern "C"` callback, and is the one `unsafe` entry point left.
 
-`Engine` is `Send + Sync`. `Store` and everything derived from it are single-threaded.
+`Engine` is neither `Send` nor `Sync`, and neither is `Store` or anything derived from it. zwasm's engine is single-threaded per *process* rather than per store: its stores share process-global state, so keeping a store on one thread is necessary rather than sufficient.
 
 For low-level access, see [zwasm-sys](crates/zwasm-sys).
 
