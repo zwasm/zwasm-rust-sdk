@@ -95,6 +95,53 @@
 //!
 //! [`Func::new_host`]: func::Func::new_host
 //!
+//! ## Observability
+//!
+//! Five engine events can be listened to, so that an embedder can watch a guest
+//! without instrumenting it: [`Engine::set_compile_hook`],
+//! [`Engine::set_instantiate_hook`], [`Engine::set_trap_hook`],
+//! [`Engine::set_fuel_exhausted_hook`] and
+//! [`Engine::set_memory_growth_hook`], each with a `clear_*` beside it.
+//!
+//! ```
+//! use std::cell::Cell;
+//! use std::rc::Rc;
+//! use zwasm_sdk::{Engine, Module, Store};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let wasm: &[u8] = &[
+//! #     0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f,
+//! #     0x03, 0x02, 0x01, 0x00, 0x07, 0x05, 0x01, 0x01, 0x66, 0x00, 0x00, 0x0a, 0x06, 0x01, 0x04,
+//! #     0x00, 0x41, 0x07, 0x0b,
+//! # ];
+//! let engine = Engine::new()?;
+//!
+//! let traps = Rc::new(Cell::new(0u32));
+//! let counted = Rc::clone(&traps);
+//! engine.set_trap_hook(move |_instance, kind, message| {
+//!     // Borrowed for this call only: copy anything you keep.
+//!     eprintln!("trap: {kind:?} {message}");
+//!     counted.set(counted.get() + 1);
+//! });
+//!
+//! let mut store = Store::new(&engine)?;
+//! let module = Module::new(&mut store, wasm)?;
+//! # let _ = module;
+//! assert_eq!(traps.get(), 0);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! Install them before the engine is used, and remember that clones share one
+//! C engine, so a hook set through any of them is set for all. A hook fires in
+//! the middle of the operation it reports: record what is needed and return,
+//! because reaching the engine, its stores or its instances from inside one is
+//! undefined.
+//!
+//! A hook reports an event, not a duration — zwasm's core carries no clock, so
+//! timing is the embedder's to do. What each hook does and does not promise is
+//! on the method; the promises are narrower than the names suggest.
+//!
 //! ## Build requirements
 //!
 //! [Zig](https://ziglang.org/) 0.16.0 must be on `PATH`. The zwasm C library is

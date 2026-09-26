@@ -105,6 +105,8 @@ All FFI unsafety is encapsulated. A host function is a Rust closure through `Fun
 
 `Engine` is neither `Send` nor `Sync`, and neither is `Store` or anything derived from it. zwasm's engine is single-threaded per *process* rather than per store: its stores share process-global state, so keeping a store on one thread is necessary rather than sufficient.
 
+Five engine events can be observed — compiles, instantiations, traps, fuel exhaustion and memory growth — through `Engine::set_compile_hook` and its four siblings. A hook fires in the middle of the operation it reports, so it must not call back into the engine, and it reports an event rather than a duration: zwasm's core carries no clock.
+
 For low-level access, see [zwasm-sys](crates/zwasm-sys).
 
 ## API Reference
