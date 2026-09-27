@@ -152,7 +152,7 @@ jobs:
           cargo build
 
       # zwasm-sdk is deliberately not packaged here. Packaging it resolves
-      # `zwasm-sys = "^0.2.0"` against crates.io, which cannot succeed until
+      # `zwasm-sys = "^0.3.0"` against crates.io, which cannot succeed until
       # that version is published — and `--no-verify` does not help, because
       # the resolution happens while preparing the package rather than while
       # verifying it. Nothing is lost: zwasm-sdk carries no submodule and no

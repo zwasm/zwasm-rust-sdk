@@ -36,7 +36,8 @@ default without cargo-zigbuild.
 
 | zwasm-sdk | zwasm-sys | zwasm C API |
 |-----------|-----------|-------------|
-| 0.2.x     | 0.2.x     | 2.7.x       |
+| 0.3.x     | 0.3.x     | 2.7.x       |
+| 0.2.x     | 0.2.x     | 2.6.x       |
 | 0.1.x     | 0.1.x     | 1.11.x      |
 
 zwasm 2.0 replaced the custom C API with the standard [wasm-c-api](https://github.com/WebAssembly/wasm-c-api), so 0.2 is a full rewrite with no path from 0.1. See [CHANGELOG.md](CHANGELOG.md).
@@ -47,7 +48,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zwasm-sdk = "0.2"
+zwasm-sdk = "0.3"
 ```
 
 ## Example

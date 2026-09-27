@@ -9,7 +9,7 @@ links = "zwasm"
 name = "zwasm-sys"
 readme = "README.md"
 repository = "https://github.com/zwasm/zwasm-rust-sdk"
-version = "0.2.0"
+version = "0.3.0"
 include = [
     "Cargo.toml",
     "LICENSE*",
