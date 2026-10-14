@@ -194,7 +194,7 @@ jobs:
           version: 0.16.0
 
       - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-zigbuild
 
