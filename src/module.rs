@@ -27,8 +27,9 @@ pub enum ExternKind {
     Memory,
     /// `WASM_EXTERN_TAG`, from the exception-handling proposal.
     ///
-    /// Present because this mirrors the C enum, not because it arrives:
-    /// [`Module::imports`] drops tag imports rather than reporting them.
+    /// Reported by [`Module::imports`] at the position the module declares it.
+    /// Nothing here can satisfy one yet: a tag has no `wasm_extern_t`, so a
+    /// module importing one cannot be instantiated through this crate.
     Tag,
     /// A kind this crate does not know about, carrying the raw value.
     Unknown(u8),
@@ -92,24 +93,16 @@ impl Module {
     ///
     /// # It can be shorter than the import section
     ///
-    /// Two things make zwasm drop an entry, and neither is visible from here:
-    /// the C call returns no status, so a shortened list looks exactly like a
-    /// module that imports less.
+    /// The stock C call returns no status, so an allocation failure inside
+    /// zwasm leaves `out` with fewer entries than the module declares, and a
+    /// shortened list looks exactly like a module that imports less. Only
+    /// reachable under memory pressure. zwasm 2.8.0 added
+    /// `zwasm_module_imports_ex`, which answers `false` instead of a partial
+    /// vector; this crate does not use it yet.
     ///
-    /// A **tag import** is always dropped — base `wasm.h` has no tag type, so
-    /// zwasm skips it rather than reporting it. A module importing a function,
-    /// a tag and a function reports two entries, and the second function sits
-    /// at index 1 where the module declares it at 2. Such a module cannot be
-    /// instantiated through this crate either, but it fails with no reason
-    /// rather than with the tag it wanted.
-    ///
-    /// An **allocation failure inside zwasm** drops the entry it happened on,
-    /// or leaves a name empty. Only reachable under memory pressure, and
-    /// equally silent.
-    ///
-    /// zwasm/zwasm#475 asks for an entry point that is complete or fails.
-    /// Until there is one, a caller that must be certain has to decode the
-    /// import section itself.
+    /// Every kind is reported, a tag included, at the position the module
+    /// declares it. (zwasm 2.7.0 dropped tag imports from the list, shifting
+    /// what followed; zwasm/zwasm#475 fixed that.)
     ///
     /// Unlike wasmtime's `Module::imports`, which lends names out of the
     /// module, these are owned: the names live in a C vector this call has to

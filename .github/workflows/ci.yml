@@ -35,13 +35,12 @@ jobs:
       - name: Build
         run: cargo build --all-targets
 
-      # One test thread, because zwasm installs its fault handler with a race:
-      # `signal.ensureInstalled` marks the handler installed before it installs
-      # it, so a second thread entering JIT code during that window runs with
-      # none and dies on the first guard fault. Tests here execute wasm and
-      # several trap on purpose, so running them in parallel fails
-      # intermittently — observed as a SIGBUS on macOS aarch64, where a guard
-      # hit raises SIGBUS rather than SIGSEGV.
+      # One test thread, because zwasm's engine is single-threaded per
+      # process: its stores share process-global state, so two tests driving
+      # engines on two threads can free what the other is reading. Every test
+      # binary here creates engines. (The fault-handler race this once cited,
+      # zwasm/zwasm#320, was fixed in zwasm 2.6.0; the constraint above is the
+      # one that remains.)
       #
       # Passed as the flag rather than RUST_TEST_THREADS so it reads at the
       # call site, and so doctests are covered by the documented interface
@@ -152,7 +151,7 @@ jobs:
           cargo build
 
       # zwasm-sdk is deliberately not packaged here. Packaging it resolves
-      # `zwasm-sys = "^0.3.0"` against crates.io, which cannot succeed until
+      # `zwasm-sys = "^0.4.0"` against crates.io, which cannot succeed until
       # that version is published — and `--no-verify` does not help, because
       # the resolution happens while preparing the package rather than while
       # verifying it. Nothing is lost: zwasm-sdk carries no submodule and no
