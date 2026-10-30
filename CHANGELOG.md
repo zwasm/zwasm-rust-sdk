@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-10-31
+### Changed
+- Updated the bundled zwasm C API to 2.8.1. `Module::imports` now reports a tag import at the position the module declares it, where 2.7.0 dropped it and shifted what followed (zwasm/zwasm#475); the x86_64 JIT runs the bench's shootout fixtures 23–25% faster. The C API gained `zwasm_module_imports_ex`, `wasm_trap_origin` and `wasm_trap_trace` now carry frames on the interpreter, and a `Func::new` callback whose type does not match its import now fails instantiation instead of being called with the wrong signature — none of these is wrapped yet. 2.8.1 is 2.8.0 plus one fix: on the interpreter, a float-to-int truncation of exactly 2^31, 2^32, 2^63 or 2^64 traps `integer overflow` instead of stopping the host process (GHSA-xcf3-8ww5-fwxh)
+
 ## [0.3.0] - 2026-09-27
 ### Changed
 - **Breaking.** `Engine` is no longer `Send` or `Sync`. zwasm 2.7.0 states that its engine is single-threaded per *process*, not per store: stores share process-global state, so a thread deleting one store can free memory a call on another thread is still reading, even with no handle shared between them. The `unsafe impl` this crate carried let safe code build exactly that. Removing it is necessary rather than sufficient — two engines created independently on two threads are no safer — and nothing here prevents that yet

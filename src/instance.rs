@@ -46,10 +46,9 @@ pub enum EngineKind {
     /// keeps that from being a panic, and lets the kind be handed back to
     /// [`Instance::new_with_engine`], where that zwasm does know it.
     ///
-    /// Asking for one zwasm does *not* know is not an error there: it maps any
-    /// unrecognized byte to [`Auto`](Self::Auto) rather than refusing, which
-    /// its C header does not say (zwasm/zwasm#459). So a kind this crate
-    /// invented, rather than read back, is a silent `Auto`.
+    /// Asking for one zwasm does *not* know is not an error there: `zwasm.h`
+    /// says any unrecognized byte is [`Auto`](Self::Auto), not a refusal. So a
+    /// kind this crate invented, rather than read back, is a silent `Auto`.
     Unknown(i32),
 }
 
@@ -238,7 +237,7 @@ impl Instance {
     /// entering a function the backend polls at all.
     ///
     /// Which functions those are is a property of the backend, not of the
-    /// engine (zwasm/zwasm#466). The x86_64 backend emits no poll for a function
+    /// engine, and `zwasm.h` says so. The x86_64 backend emits no poll for a function
     /// that never touches its runtime pointer, so a trivial one — a body that
     /// only pushes a constant, say — is charged nothing, and runs to completion
     /// on an exhausted budget rather than trapping. The arm64 backend polls on

@@ -110,26 +110,31 @@ const TAG_BETWEEN_FUNCS: &[u8] = &[
     0x65, 0x6e, 0x76, 0x05, 0x61, 0x66, 0x74, 0x65, 0x72, 0x00, 0x00,
 ];
 
-// zwasm drops tag imports — base `wasm.h` has no tag type, so its introspection
-// skips them (`src/api/module_introspect.zig:126`) — and the C call returns no
-// status, so nothing here can tell a shortened list from a shorter module.
-//
-// Pinned rather than left to be discovered: `imports`'s doc claims exactly this
-// shape, and zwasm/zwasm#475 asks for an entry point that is complete or
-// fails. When that lands, this test fails and the doc it guards comes off with
-// it.
+// zwasm 2.7.0 dropped a tag import from the list — base `wasm.h` had no tag
+// type in its introspection — so the function after it was reported one index
+// early, and the C call's lack of a status hid the shift. 2.8.0 reports it at
+// its position (zwasm/zwasm#475). Pinned because `imports`'s doc claims
+// positional fidelity, and because a positional caller binds every later
+// import to the wrong declaration if this ever regresses.
 #[test]
-fn a_tag_import_is_dropped_and_shifts_what_follows() {
+fn a_tag_import_is_reported_at_its_position() {
     let engine = Engine::new().unwrap();
     let mut store = Store::new(&engine).unwrap();
     let module = compile(&mut store, TAG_BETWEEN_FUNCS);
 
     let imports = module.imports(&store);
-    assert_eq!(imports.len(), 2, "the module declares three");
-    assert_eq!((imports[0].module(), imports[0].name()), ("env", "before"));
-
-    // Declared at index 2, reported at index 1.
-    assert_eq!((imports[1].module(), imports[1].name()), ("env", "after"));
+    let seen: Vec<_> = imports
+        .iter()
+        .map(|i| (i.module(), i.name(), i.kind()))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            ("env", "before", ExternKind::Func),
+            ("env", "error", ExternKind::Tag),
+            ("env", "after", ExternKind::Func),
+        ]
+    );
 }
 
 /// A `() -> i32` host function returning `n`.
