@@ -91,53 +91,59 @@ impl Module {
     /// position, so this is what lets a caller order its own functions without
     /// having read the module's source.
     ///
-    /// # It can be shorter than the import section
-    ///
-    /// The stock C call returns no status, so an allocation failure inside
-    /// zwasm leaves `out` with fewer entries than the module declares, and a
-    /// shortened list looks exactly like a module that imports less. Only
-    /// reachable under memory pressure. zwasm 2.8.0 added
-    /// `zwasm_module_imports_ex`, which answers `false` instead of a partial
-    /// vector; this crate does not use it yet.
-    ///
     /// Every kind is reported, a tag included, at the position the module
     /// declares it. (zwasm 2.7.0 dropped tag imports from the list, shifting
     /// what followed; zwasm/zwasm#475 fixed that.)
     ///
     /// Unlike wasmtime's `Module::imports`, which lends names out of the
     /// module, these are owned: the names live in a C vector this call has to
-    /// free before returning, so they are copied rather than borrowed.
+    /// free before returning, so they are copied rather than borrowed. And
+    /// unlike wasmtime's, this one can fail: wasmtime decodes the section
+    /// itself, where this crate asks zwasm to.
     ///
     /// A name that is not valid UTF-8 arrives as U+FFFD rather than an error.
     /// The binary format rules such a name out, but zwasm decodes it anyway
     /// (zwasm/zwasm#474), so the conversion is lossy where the spec says
     /// nothing should need converting.
     ///
+    /// # Errors
+    ///
+    /// Fails when zwasm cannot build the list. The list is then absent rather
+    /// than partial: a shorter list would read exactly like a module that
+    /// imports less. Besides an allocation failure, one import is known to do
+    /// this: a memory64 memory whose minimum does not fit `u32`, which the
+    /// wasm-c-api's `wasm_limits_t` cannot hold (zwasm/zwasm#670).
+    ///
     /// # Panics
     ///
     /// Panics when `self` belongs to a different store.
-    pub fn imports(&self, store: &Store) -> Vec<ImportType> {
+    pub fn imports(&self, store: &Store) -> Result<Vec<ImportType>, Error> {
         store.check(self.store_id);
         let mut imports = sys::wasm_importtype_vec_t {
             size: 0,
             data: std::ptr::null_mut(),
         };
-        unsafe { sys::wasm_module_imports(self.ptr, &mut imports) };
-        let mut result = Vec::new();
+        let result = unsafe { sys::zwasm_module_imports_ex(self.ptr, &mut imports) };
+        if !result {
+            return Err(Error::Message(
+                "failed to list the module's imports".to_string(),
+            ));
+        }
+        let mut list = Vec::new();
         for i in 0..imports.size {
             let importtype = unsafe { *imports.data.add(i) };
             let module = unsafe { &*sys::wasm_importtype_module(importtype) };
             let name = unsafe { &*sys::wasm_importtype_name(importtype) };
             let kind =
                 unsafe { sys::wasm_externtype_kind(sys::wasm_importtype_type(importtype)) }.into();
-            result.push(ImportType {
+            list.push(ImportType {
                 module: String::from_utf8_lossy(name_bytes(module)).into_owned(),
                 name: String::from_utf8_lossy(name_bytes(name)).into_owned(),
                 kind,
             })
         }
         unsafe { sys::wasm_importtype_vec_delete(&mut imports) };
-        result
+        Ok(list)
     }
 }
 

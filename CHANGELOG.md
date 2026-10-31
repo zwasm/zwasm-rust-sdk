@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Changed
+- **Breaking.** `Module::imports` returns `Result<Vec<ImportType>, Error>`. It now calls `zwasm_module_imports_ex`, which says whether the list is complete; the stock call it used before could not, so a failure inside zwasm came back as an empty list, indistinguishable from a module that imports nothing. That failure is not only an out-of-memory one: a memory64 import whose minimum does not fit `u32` reaches it on 2.8.1 (zwasm/zwasm#670). A caller adds `?`
+
 ## [0.4.0] - 2026-10-31
 ### Changed
 - Updated the bundled zwasm C API to 2.8.1. `Module::imports` now reports a tag import at the position the module declares it, where 2.7.0 dropped it and shifted what followed (zwasm/zwasm#475); the x86_64 JIT runs the bench's shootout fixtures 23–25% faster. The C API gained `zwasm_module_imports_ex`, `wasm_trap_origin` and `wasm_trap_trace` now carry frames on the interpreter, and a `Func::new` callback whose type does not match its import now fails instantiation instead of being called with the wrong signature — none of these is wrapped yet. 2.8.1 is 2.8.0 plus one fix: on the interpreter, a float-to-int truncation of exactly 2^31, 2^32, 2^63 or 2^64 traps `integer overflow` instead of stopping the host process (GHSA-xcf3-8ww5-fwxh)

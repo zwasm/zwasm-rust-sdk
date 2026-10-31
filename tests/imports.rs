@@ -4,7 +4,7 @@
 //! caller who wrote the module. These read the import section so a caller who
 //! did not can order its own functions by name.
 
-use zwasm_sdk::{Engine, ExternKind, Func, Instance, Module, Store, Val, ValType};
+use zwasm_sdk::{Engine, Error, ExternKind, Func, Instance, Module, Store, Val, ValType};
 
 // (module (import "env" "h" (func)))
 const ONE_FUNC: &[u8] = &[
@@ -54,7 +54,7 @@ fn a_func_import_reports_its_module_field_and_kind() {
     let mut store = Store::new(&engine).unwrap();
     let module = compile(&mut store, ONE_FUNC);
 
-    let imports = module.imports(&store);
+    let imports = module.imports(&store).unwrap();
     assert_eq!(imports.len(), 1);
     assert_eq!(imports[0].module(), "env");
     assert_eq!(imports[0].name(), "h");
@@ -67,7 +67,7 @@ fn a_module_that_imports_nothing_reports_nothing() {
     let mut store = Store::new(&engine).unwrap();
     let module = compile(&mut store, NO_IMPORTS);
 
-    assert!(module.imports(&store).is_empty());
+    assert!(module.imports(&store).unwrap().is_empty());
 }
 
 // Order is the contract: `Instance::new` takes imports by position, so a list
@@ -82,7 +82,7 @@ fn every_kind_is_reported_in_declaration_order() {
     let mut store = Store::new(&engine).unwrap();
     let module = compile(&mut store, EVERY_KIND);
 
-    let imports = module.imports(&store);
+    let imports = module.imports(&store).unwrap();
     let seen: Vec<(&str, &str, ExternKind)> = imports
         .iter()
         .map(|i| (i.module(), i.name(), i.kind()))
@@ -122,7 +122,7 @@ fn a_tag_import_is_reported_at_its_position() {
     let mut store = Store::new(&engine).unwrap();
     let module = compile(&mut store, TAG_BETWEEN_FUNCS);
 
-    let imports = module.imports(&store);
+    let imports = module.imports(&store).unwrap();
     let seen: Vec<_> = imports
         .iter()
         .map(|i| (i.module(), i.name(), i.kind()))
@@ -135,6 +135,54 @@ fn a_tag_import_is_reported_at_its_position() {
             ("env", "after", ExternKind::Func),
         ]
     );
+}
+
+// (module (import "env" "m" (memory i64 4294967296)))
+//
+// A memory64 minimum one past u32. Valid: memory64 allows up to 2^48 pages.
+const MEM64_MIN_PAST_U32: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x02, 0x0e, 0x01, 0x03, 0x65, 0x6e, 0x76, 0x01,
+    0x6d, 0x02, 0x04, 0x80, 0x80, 0x80, 0x80, 0x10,
+];
+
+// (module (import "env" "m" (memory i64 4294967295)))
+const MEM64_MIN_AT_U32: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x02, 0x0e, 0x01, 0x03, 0x65, 0x6e, 0x76, 0x01,
+    0x6d, 0x02, 0x04, 0xff, 0xff, 0xff, 0xff, 0x0f,
+];
+
+// The wasm-c-api's `wasm_limits_t` is u32, so zwasm cannot build an import
+// type for this memory and `zwasm_module_imports_ex` answers `false`
+// (zwasm/zwasm#670). Through 0.4.0, which used the stock call, the same module
+// came back as an empty list — a module that imports nothing. This is the one
+// known way to reach the failure without exhausting memory; if zwasm/zwasm#670
+// is fixed by saturating the limit, as its table path does, this route closes
+// and the test will need another.
+#[test]
+fn a_memory64_import_past_u32_is_an_error_not_an_empty_list() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let module = compile(&mut store, MEM64_MIN_PAST_U32);
+
+    let err = module.imports(&store).unwrap_err();
+    assert!(matches!(err, Error::Message(_)), "{err:?}");
+    assert_eq!(err.to_string(), "failed to list the module's imports");
+}
+
+// The boundary: one page less and the import type fits, so the list is
+// complete. Pins that the failure above is the u32 limit, not memory64 itself.
+#[test]
+fn a_memory64_import_at_u32_is_listed() {
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let module = compile(&mut store, MEM64_MIN_AT_U32);
+
+    let imports = module.imports(&store).unwrap();
+    let seen: Vec<_> = imports
+        .iter()
+        .map(|i| (i.module(), i.name(), i.kind()))
+        .collect();
+    assert_eq!(seen, [("env", "m", ExternKind::Memory)]);
 }
 
 /// A `() -> i32` host function returning `n`.
@@ -166,6 +214,7 @@ fn imports_can_order_the_funcs_instance_new_expects() {
     // What the module wants, in the order it wants it.
     let ordered: Vec<Func> = module
         .imports(&store)
+        .unwrap()
         .iter()
         .map(|import| {
             assert_eq!(import.module(), "hosts");
