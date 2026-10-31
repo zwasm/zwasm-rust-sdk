@@ -115,6 +115,44 @@ impl From<i32> for TrapKind {
     }
 }
 
+/// One frame a trap unwound: which function, and where in it.
+///
+/// Mirrors wasmtime's `FrameInfo` in what it has and parts from it in what it
+/// lacks. There is no `module()`, because zwasm's `wasm_frame_instance` is
+/// always null (an instance's runtime can outlive the instance), and no
+/// `func_name()` or `symbols()`, because zwasm reads no name section. The two
+/// offsets are not `Option`s: zwasm records no frame for a function it has no
+/// offset table for, so a frame that exists always knows where it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameInfo {
+    func_index: u32,
+    func_offset: usize,
+    module_offset: usize,
+}
+
+impl FrameInfo {
+    /// The function's index in the module's function index space, imports
+    /// included.
+    pub fn func_index(&self) -> u32 {
+        self.func_index
+    }
+
+    /// The byte offset of the instruction that was executing, counted from the
+    /// start of the function body (its local declarations). The same origin
+    /// wasmtime's `FrameInfo::func_offset` uses.
+    pub fn func_offset(&self) -> usize {
+        self.func_offset
+    }
+
+    /// The byte offset of the instruction that was executing, counted from the
+    /// start of the module. It points at the opcode itself, so the byte at this
+    /// offset in the module's binary is the instruction, and the number lines
+    /// up with `wasm-tools print --print-offsets`.
+    pub fn module_offset(&self) -> usize {
+        self.module_offset
+    }
+}
+
 /// Anything that can go wrong in this crate.
 #[derive(Error, Debug)]
 pub enum Error {
@@ -125,9 +163,22 @@ pub enum Error {
     #[error("{0}")]
     Message(String),
 
-    /// Guest execution trapped. Carries the message from `wasm_trap_message`.
+    /// Guest execution trapped. Carries the message from `wasm_trap_message`
+    /// and the frames from `wasm_trap_trace`, innermost first, which
+    /// [`frames`](Error::frames) reads.
+    ///
+    /// The frames are filled on an interpreter-backed instance and empty on a
+    /// JIT-backed one, for an exception no frame caught, and for a trap that
+    /// never passed through a guest (a host function called directly whose
+    /// closure returned `Err`). A trap a host function returns into a guest
+    /// starts its trace at the guest's call into the host. At most 64 frames
+    /// are kept, the outermost dropped first.
     #[error("{message}")]
-    Trap { kind: TrapKind, message: String },
+    Trap {
+        kind: TrapKind,
+        message: String,
+        frames: Vec<FrameInfo>,
+    },
 
     /// The guest ended itself through WASI `proc_exit`, asking for `code`.
     ///
@@ -143,9 +194,22 @@ pub enum Error {
 impl Error {
     pub fn trap_kind(&self) -> Option<TrapKind> {
         match self {
-            Error::Trap { kind, message: _ } => Some(*kind),
+            Error::Trap { kind, .. } => Some(*kind),
             Error::Message(_) => None,
             Error::WasiExit { .. } => Some(TrapKind::WasiExit),
+        }
+    }
+
+    /// The frames the trap unwound, innermost first.
+    ///
+    /// Empty when zwasm recorded none (see [`Error::Trap`] for when that is)
+    /// and for an error that is not a trap. The first frame is the one that
+    /// trapped, which is what `wasm_trap_origin` reports.
+    pub fn frames(&self) -> &[FrameInfo] {
+        match self {
+            Error::Trap { frames, .. } => frames,
+            Error::Message(_) => &[],
+            Error::WasiExit { .. } => &[],
         }
     }
 }
@@ -190,10 +254,30 @@ pub(crate) unsafe fn trap_to_error(trap: *mut sys::wasm_trap_t, store: &Store) -
         String::from_utf8_lossy(bytes.strip_suffix(&[0]).unwrap_or(bytes)).into_owned()
     };
     sys::wasm_byte_vec_delete(&mut message);
+
+    // The frames are borrowed from the vector, so they are copied out before it
+    // is freed; an empty vector is what zwasm gives when it recorded none.
+    let mut trace = sys::wasm_frame_vec_t {
+        size: 0,
+        data: std::ptr::null_mut(),
+    };
+    sys::wasm_trap_trace(trap, &mut trace);
+    let mut frames = Vec::with_capacity(trace.size);
+    for i in 0..trace.size {
+        let frame = *trace.data.add(i);
+        frames.push(FrameInfo {
+            func_index: sys::wasm_frame_func_index(frame),
+            func_offset: sys::wasm_frame_func_offset(frame),
+            module_offset: sys::wasm_frame_module_offset(frame),
+        });
+    }
+    sys::wasm_frame_vec_delete(&mut trace);
+
     sys::wasm_trap_delete(trap);
     Error::Trap {
         kind: kind.into(),
         message: msg,
+        frames,
     }
 }
 
