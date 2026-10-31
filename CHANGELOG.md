@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Changed
+- **Breaking.** Updated the bundled zwasm C API to 2.9.0, which builds with Zig 0.17.0 and only 0.17.0 (zwasm's ADR-0235: one Zig minor is pinned, and the pin moves only in a zwasm minor). Building this crate now needs Zig 0.17.0 on `PATH`; 0.16.0 fails inside zwasm's `build.zig`. The C API itself did not change. On the interpreter, calls are faster and `nearest`, `min` and `max` follow IEEE on ties, signalling NaNs and signed zeros (zwasm/zwasm#655)
 - **Breaking.** `Module::imports` returns `Result<Vec<ImportType>, Error>`. It now calls `zwasm_module_imports_ex`, which says whether the list is complete; the stock call it used before could not, so a failure inside zwasm came back as an empty list, indistinguishable from a module that imports nothing. That failure is not only an out-of-memory one: a memory64 import whose minimum does not fit `u32` reaches it on 2.8.1 (zwasm/zwasm#670). A caller adds `?`
 
 ## [0.4.0] - 2026-10-31
