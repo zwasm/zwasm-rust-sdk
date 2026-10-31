@@ -3,7 +3,10 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Added
+- `Error::frames`, the frames a trap unwound, innermost first, each a `FrameInfo` with the function index and the offsets in the module and in the function. zwasm fills them on an interpreter-backed instance (zwasm/zwasm#498); on the JIT they are empty, as they are for an exception no frame caught and for a trap that never passed through a guest. The module offset points at the trapping opcode itself. At most 64 frames, outermost dropped first
 ### Changed
+- **Breaking.** `Error::Trap` has a third field, `frames`, so a pattern that names its fields without `..` no longer compiles
 - **Breaking.** `Module::imports` returns `Result<Vec<ImportType>, Error>`. It now calls `zwasm_module_imports_ex`, which says whether the list is complete; the stock call it used before could not, so a failure inside zwasm came back as an empty list, indistinguishable from a module that imports nothing. That failure is not only an out-of-memory one: a memory64 import whose minimum does not fit `u32` reaches it on 2.8.1 (zwasm/zwasm#670). A caller adds `?`
 
 ## [0.4.0] - 2026-10-31
