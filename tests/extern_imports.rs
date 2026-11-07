@@ -66,6 +66,12 @@ const MEM_EXPORT: &[u8] = &[
     0x03, 0x6d, 0x65, 0x6d, 0x02, 0x00,
 ];
 
+// (module (table (export "t") 1 10 funcref))
+const TABLE_EXPORT: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x04, 0x05, 0x01, 0x70, 0x01, 0x01, 0x0a, 0x07,
+    0x05, 0x01, 0x01, 0x74, 0x01, 0x00,
+];
+
 fn new_store() -> (Engine, Store) {
     let engine = Engine::new().unwrap();
     let store = Store::new(&engine).unwrap();
@@ -241,4 +247,39 @@ fn extern_kind_matches_what_the_module_asks_for() {
     assert!(externs[3].into_memory().is_some() && externs[3].into_func().is_none());
 
     Instance::new(&mut store, &module, &externs).unwrap();
+}
+
+// zwasm binds a table import by value (zwasm/zwasm#449). Its stop-gap for a
+// host-made table is to refuse every later grow, on both sides.
+#[test]
+fn a_host_table_stops_growing_once_imported() {
+    let (_engine, mut store) = new_store();
+    let table = Table::new(&mut store, 1, Some(10)).unwrap();
+    assert_eq!(table.grow(&mut store, 1).unwrap(), 1);
+
+    let module = Module::new(&mut store, TABLE_IMPORT).unwrap();
+    let instance = Instance::new(&mut store, &module, &[table.into()]).unwrap();
+    assert_eq!(call_i32(&mut store, &instance, "size"), 2);
+
+    assert!(table.grow(&mut store, 1).is_err());
+    assert_eq!(table.size(&store), 2);
+}
+
+// The same defect with no stop-gap: a table another instance exported, once
+// imported, would leave one side on freed memory after a grow. This crate
+// refuses it before zwasm sees it.
+#[test]
+fn a_table_another_instance_exported_is_refused_as_an_import() {
+    let (_engine, mut store) = new_store();
+    let exporter = Module::new(&mut store, TABLE_EXPORT).unwrap();
+    let exporter =
+        Instance::new_with_engine(&mut store, &exporter, &[], EngineKind::Interp).unwrap();
+    let table = exporter.get_table(&mut store, "t").unwrap();
+
+    let importer = Module::new(&mut store, TABLE_IMPORT).unwrap();
+    let err = Instance::new(&mut store, &importer, &[table.into()]).unwrap_err();
+    match err {
+        Error::Message(message) => assert!(message.contains("zwasm/zwasm#449"), "{message}"),
+        other => panic!("expected Error::Message, got {other:?}"),
+    }
 }

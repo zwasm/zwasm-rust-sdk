@@ -16,6 +16,9 @@ use crate::{
 pub struct Table {
     pub(crate) ptr: *mut sys::wasm_table_t,
     pub(crate) store_id: u64,
+    // Taken from an instance's exports rather than made by `Table::new`.
+    // `Instance::new` refuses to import such a table (zwasm/zwasm#449).
+    pub(crate) exported: bool,
 }
 
 impl Table {
@@ -50,13 +53,19 @@ impl Table {
         Ok(Table {
             ptr,
             store_id: store.id,
+            exported: false,
         })
     }
 
     /// Grows the table by `delta` null slots and returns the previous number of
     /// slots.
     ///
-    /// Fails when the result would exceed the maximum the table was created with.
+    /// Fails when the result would exceed the maximum the table was created
+    /// with, and always once an instance has imported this table: zwasm binds
+    /// an imported table by value, so a grow on either side would leave the
+    /// other on freed memory, and it refuses both instead (zwasm/zwasm#449).
+    /// A guest's `table.grow` on it fails the same way. A memory has no such
+    /// limit.
     pub fn grow(&self, store: &mut Store, delta: u32) -> Result<u32, Error> {
         store.check(self.store_id);
         let size = unsafe { sys::wasm_table_size(self.ptr) };
