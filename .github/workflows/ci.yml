@@ -24,7 +24,7 @@ jobs:
       - name: Install Zig
         uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       - name: cargo fmt
         run: cargo fmt --all -- --check
@@ -113,7 +113,7 @@ jobs:
       - name: Install Zig
         uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       # No-op on a fresh checkout. Kept so this job runs exactly what the release
       # procedure runs.
@@ -190,7 +190,7 @@ jobs:
       - name: Install Zig
         uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       - name: Install cargo-zigbuild
         uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32

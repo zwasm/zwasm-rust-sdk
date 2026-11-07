@@ -17,7 +17,7 @@ A recent stable Rust compiler is recommended. (Rust 2021 edition)
 
 ## Build and Link Requirements
 
-- Requires [Zig](https://ziglang.org/) 0.16.0 to be installed and available in your PATH (used to build the zwasm C library).
+- Requires [Zig](https://ziglang.org/) 0.17.0 to be installed and available in your PATH (used to build the zwasm C library). Exactly that minor: zwasm pins one Zig version.
 - The zwasm C API is built automatically from the submodule during the build; no manual installation is needed.
 - The library is linked **statically**, so nothing has to be installed on the machine that runs your binary.
 - Supported platforms: **Unix-like systems (Linux, macOS)** only. Windows is not supported.

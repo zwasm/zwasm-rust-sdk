@@ -8,7 +8,7 @@ We welcome bug reports, feature requests, documentation improvements, and pull r
 
 ## Development Setup
 
-This project requires **Zig 0.16.0** to build the underlying `zwasm` library.
+This project requires **Zig 0.17.0**, exactly, to build the underlying `zwasm` library: zwasm pins one Zig minor and moves it only in a zwasm minor release.
 
 1. **Clone the repository with submodules:**
    ```bash
@@ -21,7 +21,7 @@ This project requires **Zig 0.16.0** to build the underlying `zwasm` library.
 
 2. **Install Zig:**
 
-   Ensure zig (version 0.16.0) is in your PATH.
+   Ensure zig (version 0.17.0) is in your PATH.
 
 ## How to Contribute
 
