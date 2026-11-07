@@ -5,7 +5,7 @@ use crate::{
     func::Func,
     module::{name_bytes, Module},
     store::Store,
-    Global, Memory, Table,
+    Extern, Global, Memory, Table,
 };
 
 /// Which engine runs one instance, mirroring `ZWASM_ENGINE_*` in zwasm's
@@ -93,8 +93,24 @@ impl Instance {
     ///
     /// `imports` has to line up with the module's import section, in declaration
     /// order, which [`Module::imports`](crate::module::Module::imports)
-    /// reports. Only function imports are supported; a module importing a memory,
-    /// global or table cannot be instantiated through this API yet.
+    /// reports. Each slot takes any [`Extern`]: a [`Func`], or a
+    /// [`Memory`], [`Global`] or [`Table`] the host made or another instance
+    /// exported, each wrapped with `.into()`. Slots past the module's import
+    /// count are ignored.
+    ///
+    /// A memory, global or table binds on the interpreter only. With
+    /// [`EngineKind::Auto`] a module importing one runs there, whatever the JIT
+    /// would have made of it; with [`EngineKind::Jit`] it fails with
+    /// [`Error::Message`]. One exported by another instance follows the same
+    /// rule from the other side: an instance the JIT runs can lend only its
+    /// functions, and only to the JIT. [`engine`](Self::engine) says which side
+    /// an instance is on.
+    ///
+    /// A slot of the wrong kind, too few slots, or a memory, global or table
+    /// whose type does not match the import's (limits, mutability, element
+    /// type) fail with [`Error::Message`] naming the engine and nothing else:
+    /// zwasm declines such an instantiation without a reason, as it does a
+    /// module the JIT cannot take (zwasm/zwasm#353).
     ///
     /// Imports of `wasi_snapshot_preview1.*` are resolved by the host installed
     /// with [`Store::set_wasi`](crate::store::Store::set_wasi), not through this
@@ -116,7 +132,7 @@ impl Instance {
     /// Panics when `module` or any import belongs to a different store,
     /// mirroring wasmtime. Passing them through would mix two stores' state on
     /// the C side.
-    pub fn new(store: &mut Store, module: &Module, imports: &[Func]) -> Result<Self, Error> {
+    pub fn new(store: &mut Store, module: &Module, imports: &[Extern]) -> Result<Self, Error> {
         Self::new_with_engine(store, module, imports, EngineKind::Auto)
     }
 
@@ -146,17 +162,15 @@ impl Instance {
     pub fn new_with_engine(
         store: &mut Store,
         module: &Module,
-        imports: &[Func],
+        imports: &[Extern],
         engine: EngineKind,
     ) -> Result<Self, Error> {
         store.check(module.store_id);
-        for &f in imports {
-            store.check(f.store_id);
+        for import in imports {
+            store.check(import.store_id());
         }
-        let import_externs: Vec<*mut sys::wasm_extern_t> = imports
-            .iter()
-            .map(|f| unsafe { sys::wasm_func_as_extern(f.ptr) })
-            .collect();
+        let import_externs: Vec<*mut sys::wasm_extern_t> =
+            imports.iter().map(Extern::as_raw).collect();
         let import_extern_vec = sys::wasm_extern_vec_t {
             size: import_externs.len(),
             data: import_externs.as_ptr() as *mut _,

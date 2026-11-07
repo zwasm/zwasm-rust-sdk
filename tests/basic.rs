@@ -239,7 +239,7 @@ fn test_host_function() {
     let host_fn = new_add_one_host_func(&mut store);
 
     let module = Module::new(&mut store, CALLBACK_WASM).unwrap();
-    let instance = Instance::new(&mut store, &module, &[host_fn]).unwrap();
+    let instance = Instance::new(&mut store, &module, &[host_fn.into()]).unwrap();
     let f = instance.get_func(&mut store, "f").unwrap();
 
     let mut results = [Val::I32(0)];
@@ -340,7 +340,7 @@ fn a_host_function_can_be_called_directly() {
 
     // And it is still the same function an import reaches.
     let module = Module::new(&mut store, CALLBACK_WASM).unwrap();
-    let instance = Instance::new(&mut store, &module, &[host_fn]).unwrap();
+    let instance = Instance::new(&mut store, &module, &[host_fn.into()]).unwrap();
     let f = instance.get_func(&mut store, "f").unwrap();
     results = [Val::I32(0)];
     f.call(&mut store, &[Val::I32(41)], &mut results).unwrap();

@@ -6,7 +6,7 @@
 //! land on 0x00 and that of a `call` on 0x10 — so the tests need no external
 //! disassembler to say whether the numbers are right.
 
-use zwasm_sdk::{Engine, EngineKind, Error, Func, Instance, Module, Store, TrapKind};
+use zwasm_sdk::{Engine, EngineKind, Error, Extern, Func, Instance, Module, Store, TrapKind};
 
 // (module (func $f2 unreachable) (func $f1 call $f2) (func (export "f") call $f1))
 const NESTED: &[u8] = &[
@@ -41,7 +41,7 @@ const CALL: u8 = 0x10;
 
 /// Instantiates `wasm` on `engine` with `imports`, calls its `f`, and returns
 /// the trap it is expected to produce.
-fn trap_on(wasm: &[u8], engine: EngineKind, imports: &[Func], store: &mut Store) -> Error {
+fn trap_on(wasm: &[u8], engine: EngineKind, imports: &[Extern], store: &mut Store) -> Error {
     let module = Module::new(store, wasm).unwrap();
     let instance = Instance::new_with_engine(store, &module, imports, engine).unwrap();
     let f = instance.get_func(store, "f").unwrap();
@@ -114,7 +114,7 @@ fn a_host_error_starts_its_trace_at_the_guest_call_site() {
         Err(Error::Message("the host said no".into()))
     })
     .unwrap();
-    let err = trap_on(HOST, EngineKind::Interp, &[host], &mut store);
+    let err = trap_on(HOST, EngineKind::Interp, &[host.into()], &mut store);
 
     assert_eq!(err.trap_kind(), Some(TrapKind::BindingError));
     let indices: Vec<u32> = err.frames().iter().map(|f| f.func_index()).collect();
