@@ -169,7 +169,7 @@ pub mod wasi;
 //
 // A new public type belongs here as well as in its module.
 pub use crate::engine::Engine;
-pub use crate::error::{Error, TrapKind};
+pub use crate::error::{Error, FrameInfo, TrapKind};
 pub use crate::func::Func;
 pub use crate::global::Global;
 pub use crate::instance::{EngineKind, Instance};
