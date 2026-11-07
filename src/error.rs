@@ -154,6 +154,11 @@ impl FrameInfo {
 }
 
 /// Anything that can go wrong in this crate.
+///
+/// Non-exhaustive because the C API still has calls this crate does not wrap,
+/// and wrapping one can add a variant: a `match` outside this crate needs a
+/// `_` arm.
+#[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum Error {
     /// An operation failed without producing a trap.
@@ -173,6 +178,11 @@ pub enum Error {
     /// closure returned `Err`). A trap a host function returns into a guest
     /// starts its trace at the guest's call into the host. At most 64 frames
     /// are kept, the outermost dropped first.
+    ///
+    /// Non-exhaustive because a trap in zwasm can grow a field (its frames
+    /// already carry an instance slot that is always NULL, for one): a
+    /// pattern on this variant needs `..`.
+    #[non_exhaustive]
     #[error("{message}")]
     Trap {
         kind: TrapKind,
