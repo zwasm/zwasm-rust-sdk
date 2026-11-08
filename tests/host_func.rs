@@ -55,7 +55,7 @@ fn a_guest_reaches_a_closure_that_kept_state() {
     .unwrap();
 
     let module = Module::new(&mut store, CALLBACK_WASM).unwrap();
-    let instance = Instance::new(&mut store, &module, &[host]).unwrap();
+    let instance = Instance::new(&mut store, &module, &[host.into()]).unwrap();
     let f = instance.get_func(&mut store, "f").unwrap();
 
     assert_eq!(

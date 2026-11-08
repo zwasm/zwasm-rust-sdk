@@ -20,6 +20,7 @@
 //! | [`Func`] | `wasm_func_t` | A callable function |
 //! | [`Val`] | `wasm_val_t` | An i32/i64/f32/f64 value |
 //! | [`Memory`], [`Global`], [`Table`] | `wasm_memory_t`, ... | Runtime entities |
+//! | [`Extern`] | `wasm_extern_t` | Any of the four above, as an import |
 //! | [`WasiConfig`] | `zwasm_wasi_config_t` | WASI 0.1 host setup |
 //!
 //! The store frees everything on drop — children before parents, then the C store,
@@ -84,9 +85,10 @@
 //! [`Func::new`](func::Func::new) wraps a Rust closure so a guest can call into
 //! Rust, taking the signature as [`ValType`] lists, and
 //! [`Instance::new`](instance::Instance::new) takes the resulting functions as
-//! imports, in the order the module declares them —
+//! imports, each wrapped in an [`Extern`] beside any memory, global or table the
+//! host made, in the order the module declares them —
 //! [`Module::imports`](module::Module::imports) reports that order, so a caller
-//! who did not write the module can still match its own functions by name.
+//! who did not write the module can still match its own externs by name.
 //!
 //! The closure sees its arguments and nothing else: reading the caller's memory
 //! needs an instance that zwasm's callback does not carry. [`Func::new_host`]
@@ -152,6 +154,7 @@ use zwasm_sys as sys;
 
 pub mod engine;
 pub mod error;
+pub mod externals;
 pub mod func;
 pub mod global;
 pub mod instance;
@@ -170,6 +173,7 @@ pub mod wasi;
 // A new public type belongs here as well as in its module.
 pub use crate::engine::Engine;
 pub use crate::error::{Error, FrameInfo, TrapKind};
+pub use crate::externals::Extern;
 pub use crate::func::Func;
 pub use crate::global::Global;
 pub use crate::instance::{EngineKind, Instance};

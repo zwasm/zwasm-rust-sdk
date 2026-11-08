@@ -58,7 +58,7 @@ fn store_drop_frees_everything() {
 
     let host_fn = new_add_one_host_func(&mut store);
     let module = Module::new(&mut store, CALLBACK_WASM).unwrap();
-    let instance = Instance::new(&mut store, &module, &[host_fn]).unwrap();
+    let instance = Instance::new(&mut store, &module, &[host_fn.into()]).unwrap();
     let f = instance.get_func(&mut store, "f").unwrap();
 
     let mut results = [Val::I32(0)];
@@ -142,7 +142,7 @@ fn instantiating_with_a_foreign_import_panics() {
 
     let module = Module::new(&mut store_a, CALLBACK_WASM).unwrap();
     let host_fn = new_add_one_host_func(&mut store_b);
-    let _ = Instance::new(&mut store_a, &module, &[host_fn]);
+    let _ = Instance::new(&mut store_a, &module, &[host_fn.into()]);
 }
 
 #[test]

@@ -4,7 +4,7 @@
 //! caller who wrote the module. These read the import section so a caller who
 //! did not can order its own functions by name.
 
-use zwasm_sdk::{Engine, Error, ExternKind, Func, Instance, Module, Store, Val, ValType};
+use zwasm_sdk::{Engine, Error, Extern, ExternKind, Func, Instance, Module, Store, Val, ValType};
 
 // (module (import "env" "h" (func)))
 const ONE_FUNC: &[u8] = &[
@@ -212,15 +212,15 @@ fn imports_can_order_the_funcs_instance_new_expects() {
     let second = constant_host_func(&mut store, 2);
 
     // What the module wants, in the order it wants it.
-    let ordered: Vec<Func> = module
+    let ordered: Vec<Extern> = module
         .imports(&store)
         .unwrap()
         .iter()
         .map(|import| {
             assert_eq!(import.module(), "hosts");
             match import.name() {
-                "first" => first,
-                "second" => second,
+                "first" => first.into(),
+                "second" => second.into(),
                 other => panic!("no host function for {other}"),
             }
         })
