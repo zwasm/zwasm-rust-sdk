@@ -75,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`Engine`, `Store`, `Module`, `Instance` and `Func` mirror the wasm-c-api object model. The store owns everything created through it and frees it all on drop; the other types are `Copy` handles into the store, used by passing the store back in.
+`Engine`, `Store`, `Module`, `Instance` and `Func` mirror the wasm-c-api object model. `Engine` is reference-counted and `Clone`; each store keeps a clone. The store owns everything created through it and frees it all on drop; `Module`, `Instance`, `Func` and the other entities are `Copy` handles into the store, used by passing the store back in.
 
 ## WASI
 
