@@ -20,6 +20,7 @@
 //! | [`Func`] | `wasm_func_t` | A callable function |
 //! | [`Val`] | `wasm_val_t` | An i32/i64/f32/f64 value |
 //! | [`Memory`], [`Global`], [`Table`] | `wasm_memory_t`, ... | Runtime entities |
+//! | [`Extern`] | `wasm_extern_t` | Any of the four above, as an import |
 //! | [`WasiConfig`] | `zwasm_wasi_config_t` | WASI 0.1 host setup |
 //!
 //! The store frees everything on drop — children before parents, then the C store,
