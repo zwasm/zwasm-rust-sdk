@@ -35,7 +35,7 @@ This project requires **Zig 0.17.0**, exactly, to build the underlying `zwasm` l
   - Ensure your change passes what CI runs, with the same flags:
     - `cargo fmt --all -- --check`
     - `cargo clippy --all-targets --all-features -- -D warnings`
-    - `cargo test --all-targets -- --test-threads=1` and `cargo test --doc -- --test-threads=1`. One thread because zwasm's engine is single-threaded per process, so tests that each build an engine cannot run side by side (zwasm/zwasm#320)
+    - `cargo test --all-targets -- --test-threads=1` and `cargo test --doc -- --test-threads=1`. One thread because zwasm's engine is single-threaded per process (`include/zwasm.h`, Threads), so tests that each build an engine cannot run side by side. zwasm calls separate stores on separate threads "a later design"; nothing upstream tracks it yet, and #33 holds this crate's side
     - `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --all-features`
     - `cargo package -p zwasm-sys`
   - Update documentation and README as needed.
