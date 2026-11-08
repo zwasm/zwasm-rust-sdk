@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.5.0] - 2026-11-08
 ### Added
 - `Error::frames`, wrapping the `wasm_trap_trace` the 0.4.0 entry below left unwrapped: the frames a trap unwound, innermost first, each a `FrameInfo` with the function index and the offsets in the module and in the function. zwasm fills them on an interpreter-backed instance (zwasm/zwasm#498); on the JIT they are empty, as they are for an exception no frame caught and for a trap that never passed through a guest. The module offset points at the trapping opcode itself. At most 64 frames, outermost dropped first
 ### Changed
