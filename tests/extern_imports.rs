@@ -283,3 +283,20 @@ fn a_table_another_instance_exported_is_refused_as_an_import() {
         other => panic!("expected Error::Message, got {other:?}"),
     }
 }
+
+// The store check covers every slot before any recoverable refusal, so a
+// cross-store import still panics when an exported table precedes it.
+#[test]
+#[should_panic]
+fn a_cross_store_import_after_an_exported_table_still_panics() {
+    let (engine, mut store_a) = new_store();
+    let mut store_b = Store::new(&engine).unwrap();
+    let exporter = Module::new(&mut store_a, TABLE_EXPORT).unwrap();
+    let exporter =
+        Instance::new_with_engine(&mut store_a, &exporter, &[], EngineKind::Interp).unwrap();
+    let table = exporter.get_table(&mut store_a, "t").unwrap();
+    let foreign = Memory::new(&mut store_b, 1, None).unwrap();
+
+    let module = Module::new(&mut store_a, ALL_FOUR).unwrap();
+    let _ = Instance::new(&mut store_a, &module, &[table.into(), foreign.into()]);
+}

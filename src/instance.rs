@@ -95,8 +95,9 @@ impl Instance {
     /// order, which [`Module::imports`](crate::module::Module::imports)
     /// reports. Each slot takes any [`Extern`]: a [`Func`], or a
     /// [`Memory`], [`Global`] or [`Table`] the host made or another instance
-    /// exported, each wrapped with `.into()`. Slots past the module's import
-    /// count are ignored.
+    /// exported, each wrapped with `.into()`. zwasm binds as many slots as the
+    /// module imports and does not look at the rest; the checks below apply to
+    /// every slot given, bound or not.
     ///
     /// A memory, global or table binds on the interpreter only. With
     /// [`EngineKind::Auto`] a module importing one runs there, whatever the JIT
@@ -175,13 +176,14 @@ impl Instance {
         store.check(module.store_id);
         for import in imports {
             store.check(import.store_id());
-            if let Extern::Table(table) = import {
-                if table.exported {
-                    return Err(Error::Message(
-                        "a table another instance exported cannot be imported: zwasm binds it by value (zwasm/zwasm#449)".to_string(),
-                    ));
-                }
-            }
+        }
+        if imports
+            .iter()
+            .any(|import| matches!(import, Extern::Table(table) if table.exported))
+        {
+            return Err(Error::Message(
+                "cannot import a table another instance exported (zwasm/zwasm#449)".to_string(),
+            ));
         }
         let import_externs: Vec<*mut sys::wasm_extern_t> =
             imports.iter().map(Extern::as_raw).collect();
