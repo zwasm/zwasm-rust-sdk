@@ -47,10 +47,13 @@ jobs:
       # rather than by rustdoc's handling of the env var, which has not always
       # matched libtest's.
       #
-      # Exit condition: zwasm#320. When that lands and the submodule is bumped
-      # past it, drop this and let the harness parallelise again. Note that it
-      # only protects this suite — an embedder instantiating from a thread pool
-      # has no equivalent lever, which is why the fix has to be upstream.
+      # Exit condition: zwasm making separate stores usable on separate
+      # threads, which its zwasm.h calls "a later design" (no upstream issue
+      # yet; #33 holds this crate's side). When that lands and the submodule
+      # is bumped past it, drop this and let the harness parallelise again.
+      # Note that it only protects this suite — an embedder instantiating
+      # from a thread pool has no equivalent lever, which is why the fix has
+      # to be upstream.
       - name: Tests
         run: cargo test --all-targets -- --test-threads=1
 
