@@ -75,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`Engine`, `Store`, `Module`, `Instance` and `Func` mirror the wasm-c-api object model. Each one frees its C counterpart on drop.
+`Engine`, `Store`, `Module`, `Instance` and `Func` mirror the wasm-c-api object model. The store owns everything created through it and frees it all on drop; the other types are `Copy` handles into the store, used by passing the store back in.
 
 ## WASI
 
@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Imports of `wasi_snapshot_preview1.*` then resolve against that host. WASI 0.1 is supported; the Component Model and WASI 0.2 surfaces of zwasm are not wrapped yet.
+Imports of `wasi_snapshot_preview1.*` then resolve against that host. WASI 0.1 is what zwasm's C API exposes; its Component Model, WASI 0.2 and WASI 0.3 hosts have no C API, so nothing here reaches them.
 
 ## Safety and Usage Notes
 

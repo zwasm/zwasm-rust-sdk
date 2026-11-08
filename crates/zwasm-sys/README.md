@@ -8,7 +8,7 @@ Bindings are generated with `bindgen` from three headers that zwasm installs:
 | Header | Surface |
 |--------|---------|
 | `wasm.h` | The standard [wasm-c-api](https://github.com/WebAssembly/wasm-c-api) |
-| `zwasm.h` | zwasm extensions (fuel, memory limits, interruption, engine selection) |
+| `zwasm.h` | zwasm extensions: runtime version, engine hooks, fuel, memory cap, interruption, trap kinds and traces, engine selection, module introspection |
 | `wasi.h` | WASI 0.1 host setup |
 
 ## Supported Rust Version

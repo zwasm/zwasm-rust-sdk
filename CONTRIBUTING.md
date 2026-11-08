@@ -3,7 +3,7 @@
 
 Thank you for your interest in contributing to zwasm-rust-sdk!
 
-This repository contains multiple crates, including low-level FFI bindings (zwasm-sys) and potentially higher-level libraries or tools.
+This repository holds two crates: `zwasm-sdk`, the safe bindings, at the root, and `zwasm-sys`, the raw FFI bindings it is built on, in `crates/zwasm-sys`.
 We welcome bug reports, feature requests, documentation improvements, and pull requests for any part of this project.
 
 ## Development Setup
@@ -32,7 +32,7 @@ This project requires **Zig 0.17.0**, exactly, to build the underlying `zwasm` l
 - **Pull Requests:**
   - Fork the repository and create your branch from `main`.
   - Add tests for new features or bug fixes when possible.
-  - Ensure your code passes `cargo test` and builds without warnings.
+  - Ensure your change passes what CI gates: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo doc` with `RUSTDOCFLAGS=-D warnings`, and `cargo package -p zwasm-sys`.
   - Update documentation and README as needed.
   - Open a pull request with a clear description of your changes.
 
@@ -47,9 +47,8 @@ This project requires **Zig 0.17.0**, exactly, to build the underlying `zwasm` l
 
 ## Project Scope
 
-- The repository provides Rust bindings and tools for the zwasm WebAssembly runtime.
-- The `zwasm-sys` crate offers low-level, unsafe FFI bindings to the zwasm C API.
-- Safe wrappers, high-level APIs, or SDKs should be developed in separate crates within this repository or as external projects.
+- `zwasm-sys` offers low-level, unsafe FFI bindings to the zwasm C API, generated with `bindgen` from the vendored headers.
+- `zwasm-sdk` wraps them in a safe API whose shape follows wasmtime's. A change to what the C API offers lands in the submodule first, then in `zwasm-sys` through regeneration, then here.
 - Platform support is currently limited to Unix-like systems (Linux, macOS).
 
 
