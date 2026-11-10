@@ -107,12 +107,11 @@ impl Instance {
     /// functions, and only to the JIT. [`engine`](Self::engine) says which side
     /// an instance is on.
     ///
-    /// A table the host made stops growing once imported, from either side,
-    /// and a table another instance exported cannot be imported at all: zwasm
-    /// binds a table import by value, so a grow would leave one side on freed
-    /// memory (zwasm/zwasm#449). The first is zwasm's refusal, the second this
-    /// crate's, as [`Error::Message`], until zwasm shares the table the way it
-    /// shares a memory.
+    /// A table stops growing once imported, from either side, whether the
+    /// host made it or another instance exported it: zwasm binds a table
+    /// import by value, so a grow would leave one side on freed memory, and
+    /// it refuses the grow instead (zwasm/zwasm#449). A memory has no such
+    /// limit.
     ///
     /// A slot of the wrong kind, too few slots, or a memory, global or table
     /// whose type does not match the import's (limits, mutability, element
@@ -176,14 +175,6 @@ impl Instance {
         store.check(module.store_id);
         for import in imports {
             store.check(import.store_id());
-        }
-        if imports
-            .iter()
-            .any(|import| matches!(import, Extern::Table(table) if table.exported))
-        {
-            return Err(Error::Message(
-                "cannot import a table another instance exported (zwasm/zwasm#449)".to_string(),
-            ));
         }
         let import_externs: Vec<*mut sys::wasm_extern_t> =
             imports.iter().map(Extern::as_raw).collect();
@@ -473,7 +464,6 @@ impl Instance {
         Some(Table {
             ptr,
             store_id: store.id,
-            exported: true,
         })
     }
 

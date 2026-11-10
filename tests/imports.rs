@@ -4,7 +4,7 @@
 //! caller who wrote the module. These read the import section so a caller who
 //! did not can order its own functions by name.
 
-use zwasm_sdk::{Engine, Error, Extern, ExternKind, Func, Instance, Module, Store, Val, ValType};
+use zwasm_sdk::{Engine, Extern, ExternKind, Func, Instance, Module, Store, Val, ValType};
 
 // (module (import "env" "h" (func)))
 const ONE_FUNC: &[u8] = &[
@@ -151,26 +151,24 @@ const MEM64_MIN_AT_U32: &[u8] = &[
     0x6d, 0x02, 0x04, 0xff, 0xff, 0xff, 0xff, 0x0f,
 ];
 
-// The wasm-c-api's `wasm_limits_t` is u32, so zwasm cannot build an import
-// type for this memory and `zwasm_module_imports_ex` answers `false`
-// (zwasm/zwasm#670). Through 0.4.0, which used the stock call, the same module
-// came back as an empty list — a module that imports nothing. This is the one
-// known way to reach the failure without exhausting memory; if zwasm/zwasm#670
-// is fixed by saturating the limit, as its table path does, this route closes
-// and the test will need another.
+// zwasm 2.10.0 lists such an import, with the minimum clamped to what the
+// wasm-c-api's `wasm_limits_t` can hold. 2.9.0 failed the whole list instead
+// (zwasm/zwasm#670).
 #[test]
-fn a_memory64_import_past_u32_is_an_error_not_an_empty_list() {
+fn a_memory64_import_past_u32_is_listed() {
     let engine = Engine::new().unwrap();
     let mut store = Store::new(&engine).unwrap();
     let module = compile(&mut store, MEM64_MIN_PAST_U32);
 
-    let err = module.imports(&store).unwrap_err();
-    assert!(matches!(err, Error::Message(_)), "{err:?}");
-    assert_eq!(err.to_string(), "failed to list the module's imports");
+    let imports = module.imports(&store).unwrap();
+    let seen: Vec<_> = imports
+        .iter()
+        .map(|i| (i.module(), i.name(), i.kind()))
+        .collect();
+    assert_eq!(seen, [("env", "m", ExternKind::Memory)]);
 }
 
-// The boundary: one page less and the import type fits, so the list is
-// complete. Pins that the failure above is the u32 limit, not memory64 itself.
+// The boundary: one page less fits `u32` as it is, so nothing is clamped.
 #[test]
 fn a_memory64_import_at_u32_is_listed() {
     let engine = Engine::new().unwrap();

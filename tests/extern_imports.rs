@@ -3,7 +3,7 @@
 //! `Instance::new` takes `&[Extern]`, so a module importing a memory, global
 //! or table can be instantiated with one the host made or another instance
 //! exported. zwasm binds those three on the interpreter only (measured on
-//! 2.9.0; the C API gives no reason when it declines), so the engine each
+//! 2.10.0; the C API gives no reason when it declines), so the engine each
 //! test lands on is part of what it checks.
 
 use zwasm_sdk::{
@@ -249,8 +249,8 @@ fn extern_kind_matches_what_the_module_asks_for() {
     Instance::new(&mut store, &module, &externs).unwrap();
 }
 
-// zwasm binds a table import by value (zwasm/zwasm#449). Its stop-gap for a
-// host-made table is to refuse every later grow, on both sides.
+// zwasm binds a table import by value, and refuses every later grow on both
+// sides rather than leave one on freed memory (zwasm/zwasm#449).
 #[test]
 fn a_host_table_stops_growing_once_imported() {
     let (_engine, mut store) = new_store();
@@ -265,38 +265,22 @@ fn a_host_table_stops_growing_once_imported() {
     assert_eq!(table.size(&store), 2);
 }
 
-// The same defect with no stop-gap: a table another instance exported, once
-// imported, would leave one side on freed memory after a grow. This crate
-// refuses it before zwasm sees it.
+// A table another instance exported imports the same way since zwasm 2.10.0,
+// and stops growing the same way. (2.9.0 had no refusal for it, so a grow left
+// one side on freed memory, and this crate refused the import.)
 #[test]
-fn a_table_another_instance_exported_is_refused_as_an_import() {
+fn a_table_another_instance_exported_imports_and_stops_growing() {
     let (_engine, mut store) = new_store();
     let exporter = Module::new(&mut store, TABLE_EXPORT).unwrap();
     let exporter =
         Instance::new_with_engine(&mut store, &exporter, &[], EngineKind::Interp).unwrap();
     let table = exporter.get_table(&mut store, "t").unwrap();
+    assert_eq!(table.grow(&mut store, 1).unwrap(), 1);
 
     let importer = Module::new(&mut store, TABLE_IMPORT).unwrap();
-    let err = Instance::new(&mut store, &importer, &[table.into()]).unwrap_err();
-    match err {
-        Error::Message(message) => assert!(message.contains("zwasm/zwasm#449"), "{message}"),
-        other => panic!("expected Error::Message, got {other:?}"),
-    }
-}
+    let importer = Instance::new(&mut store, &importer, &[table.into()]).unwrap();
+    assert_eq!(call_i32(&mut store, &importer, "size"), 2);
 
-// The store check covers every slot before any recoverable refusal, so a
-// cross-store import still panics when an exported table precedes it.
-#[test]
-#[should_panic]
-fn a_cross_store_import_after_an_exported_table_still_panics() {
-    let (engine, mut store_a) = new_store();
-    let mut store_b = Store::new(&engine).unwrap();
-    let exporter = Module::new(&mut store_a, TABLE_EXPORT).unwrap();
-    let exporter =
-        Instance::new_with_engine(&mut store_a, &exporter, &[], EngineKind::Interp).unwrap();
-    let table = exporter.get_table(&mut store_a, "t").unwrap();
-    let foreign = Memory::new(&mut store_b, 1, None).unwrap();
-
-    let module = Module::new(&mut store_a, ALL_FOUR).unwrap();
-    let _ = Instance::new(&mut store_a, &module, &[table.into(), foreign.into()]);
+    assert!(table.grow(&mut store, 1).is_err());
+    assert_eq!(table.size(&store), 2);
 }
