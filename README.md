@@ -36,6 +36,7 @@ default without cargo-zigbuild.
 
 | zwasm-sdk | zwasm-sys | zwasm C API |
 |-----------|-----------|-------------|
+| 0.6.x     | 0.6.x     | 2.10.x      |
 | 0.5.x     | 0.5.x     | 2.9.x       |
 | 0.4.x     | 0.4.x     | 2.8.x       |
 | 0.3.x     | 0.3.x     | 2.7.x       |
@@ -50,7 +51,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zwasm-sdk = "0.5"
+zwasm-sdk = "0.6"
 ```
 
 ## Example
@@ -115,7 +116,7 @@ For low-level access, see [zwasm-sys](crates/zwasm-sys).
 ## API Reference
 
 - [API documentation on docs.rs](https://docs.rs/zwasm-sdk)
-- [zwasm C API documentation](https://github.com/zwasm/zwasm/blob/v2.9.0/docs/reference/c_api.md)
+- [zwasm C API documentation](https://github.com/zwasm/zwasm/blob/v2.10.0/docs/reference/c_api.md)
 
 ## License
 
