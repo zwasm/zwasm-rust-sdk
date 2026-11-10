@@ -16,9 +16,6 @@ use crate::{
 pub struct Table {
     pub(crate) ptr: *mut sys::wasm_table_t,
     pub(crate) store_id: u64,
-    // Taken from an instance's exports rather than made by `Table::new`.
-    // `Instance::new` refuses to import such a table (zwasm/zwasm#449).
-    pub(crate) exported: bool,
 }
 
 impl Table {
@@ -53,7 +50,6 @@ impl Table {
         Ok(Table {
             ptr,
             store_id: store.id,
-            exported: false,
         })
     }
 

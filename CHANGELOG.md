@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Changed
+- Updated the bundled zwasm C API to 2.10.0. The headers did not change, and Zig stays at 0.17.0. `Module::imports` lists a memory64 import whose minimum does not fit `u32`, where 2.9.0 failed the whole list (zwasm/zwasm#670). A table another instance exported can be imported: zwasm now stops it growing on both sides, as it does a host-made one, so the refusal 0.5.0 added is gone (zwasm/zwasm#449). On the interpreter, an element segment whose table64 offset lies past the table is refused instead of stopping the host process (GHSA-ph9p-gw3q-7chp)
+
 ## [0.5.0] - 2026-11-08
 ### Added
 - `Error::frames`, wrapping the `wasm_trap_trace` the 0.4.0 entry below left unwrapped: the frames a trap unwound, innermost first, each a `FrameInfo` with the function index and the offsets in the module and in the function. zwasm fills them on an interpreter-backed instance (zwasm/zwasm#498); on the JIT they are empty, as they are for an exception no frame caught and for a trap that never passed through a guest. The module offset points at the trapping opcode itself. At most 64 frames, outermost dropped first

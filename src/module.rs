@@ -110,9 +110,9 @@ impl Module {
     ///
     /// Fails when zwasm cannot build the list. The list is then absent rather
     /// than partial: a shorter list would read exactly like a module that
-    /// imports less. Besides an allocation failure, one import is known to do
-    /// this: a memory64 memory whose minimum does not fit `u32`, which the
-    /// wasm-c-api's `wasm_limits_t` cannot hold (zwasm/zwasm#670).
+    /// imports less. On zwasm 2.10.0 the one cause left is an allocation
+    /// failure; before it, a memory64 memory whose minimum does not fit `u32`
+    /// was another (zwasm/zwasm#670).
     ///
     /// # Panics
     ///
