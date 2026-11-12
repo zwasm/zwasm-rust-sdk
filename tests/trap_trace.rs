@@ -139,35 +139,21 @@ fn a_host_error_with_no_guest_has_no_frames() {
 // deep recursion's trace ends before the caller that started it. Pinned because
 // a reader of a 64-frame trace with no entry point would otherwise take the
 // list for complete.
-//
-// On its own thread with room to recurse: the interpreter nests a native call
-// per guest call, and on the 2 MiB stack libtest gives a test it reports
-// `call stack exhausted` before the hundredth level (measured: before the
-// seventieth), which would make this a different trap with a different
-// innermost frame. The engine is created inside the thread because it is not
-// `Send`.
 #[test]
 fn a_trace_keeps_the_innermost_sixty_four_frames() {
-    std::thread::Builder::new()
-        .stack_size(8 << 20)
-        .spawn(|| {
-            let engine = Engine::new().unwrap();
-            let mut store = Store::new(&engine).unwrap();
-            let err = trap_on(DEEP, EngineKind::Interp, &[], &mut store);
+    let engine = Engine::new().unwrap();
+    let mut store = Store::new(&engine).unwrap();
+    let err = trap_on(DEEP, EngineKind::Interp, &[], &mut store);
 
-            assert_eq!(err.trap_kind(), Some(TrapKind::Unreachable));
-            assert_eq!(err.frames().len(), 64);
-            assert!(
-                err.frames().iter().all(|f| f.func_index() == 0),
-                "every kept frame is a $r; f, which started the recursion, fell off"
-            );
-            let opcodes = opcodes_at(DEEP, &err);
-            assert_eq!(opcodes[0], UNREACHABLE);
-            assert!(opcodes[1..].iter().all(|&op| op == CALL), "{opcodes:?}");
-        })
-        .unwrap()
-        .join()
-        .unwrap();
+    assert_eq!(err.trap_kind(), Some(TrapKind::Unreachable));
+    assert_eq!(err.frames().len(), 64);
+    assert!(
+        err.frames().iter().all(|f| f.func_index() == 0),
+        "every kept frame is a $r; f, which started the recursion, fell off"
+    );
+    let opcodes = opcodes_at(DEEP, &err);
+    assert_eq!(opcodes[0], UNREACHABLE);
+    assert!(opcodes[1..].iter().all(|&op| op == CALL), "{opcodes:?}");
 }
 
 #[test]
