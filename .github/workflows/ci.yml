@@ -200,8 +200,14 @@ jobs:
         with:
           tool: cargo-zigbuild
 
+      # The executables are taken from cargo's own messages, not from a path
+      # under target/: that layout is not an interface, and Rust 1.100.0 moved
+      # the test binaries out of `deps/`.
       - name: Cross-build, linking
-        run: cargo zigbuild --target ${{ matrix.target }} --tests
+        run: |
+          set -euo pipefail
+          cargo zigbuild --target ${{ matrix.target }} --tests \
+            --message-format=json-render-diagnostics > "$RUNNER_TEMP/cross-build.json"
 
       # A link that succeeds is most of the answer, but not all of it: assert
       # the artifact really is the target architecture, so this job still fails
@@ -215,12 +221,12 @@ jobs:
             *) echo "::error::unhandled architecture for ${{ matrix.target }}"; exit 1 ;;
           esac
           found=0
-          for bin in target/${{ matrix.target }}/debug/deps/*; do
-            [ -x "$bin" ] && [ ! -d "$bin" ] || continue
+          while IFS= read -r bin; do
             file "$bin" | grep -q "$want" || {
               echo "::error::$bin is not $want"; file "$bin"; exit 1; }
             found=$((found + 1))
-          done
+          done < <(jq -r 'select(.reason == "compiler-artifact" and .executable != null)
+                          | .executable' "$RUNNER_TEMP/cross-build.json")
           [ "$found" -gt 0 ] || { echo "::error::no linked binary to check"; exit 1; }
           echo "checked $found binaries"
 
