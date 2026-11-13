@@ -220,13 +220,17 @@ jobs:
             x86_64-*)  want="x86-64" ;;
             *) echo "::error::unhandled architecture for ${{ matrix.target }}"; exit 1 ;;
           esac
+          # Into a file first: a `jq` that stops on a line it cannot parse
+          # fails the step here, where a process substitution would hide it
+          # and leave the loop checking only the binaries listed before it.
+          jq -r 'select(.reason == "compiler-artifact" and .executable != null)
+                 | .executable' "$RUNNER_TEMP/cross-build.json" > "$RUNNER_TEMP/cross-bins.txt"
           found=0
           while IFS= read -r bin; do
             file "$bin" | grep -q "$want" || {
               echo "::error::$bin is not $want"; file "$bin"; exit 1; }
             found=$((found + 1))
-          done < <(jq -r 'select(.reason == "compiler-artifact" and .executable != null)
-                          | .executable' "$RUNNER_TEMP/cross-build.json")
+          done < "$RUNNER_TEMP/cross-bins.txt"
           [ "$found" -gt 0 ] || { echo "::error::no linked binary to check"; exit 1; }
           echo "checked $found binaries"
 
