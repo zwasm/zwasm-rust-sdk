@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Changed
+- Updated the bundled zwasm C API to 2.11.1. The headers did not change, and Zig stays at 0.17.0. On the JIT, a reference a block carries out through `br_on_null`, `br_on_non_null`, `br_on_cast` or `br_on_cast_fail` keeps its register until it is used; before, a module could make the JIT read or write outside the GC heap, and `Instance::new` runs a module on the JIT by default (GHSA-4p74-j99r-p339). On 0.6.0 the way around it is `EngineKind::Interp`. On the interpreter, a call chain deeper than 256 no longer traps `call stack exhausted` while the host stack has room (zwasm/zwasm#638). 2.11.1 is 2.11.0 plus one build fix: 2.11.0 did not build from a tree without zwasm's `test/`, which is the tree `zwasm-sys` ships (zwasm/zwasm#724)
+
 ## [0.6.0] - 2026-11-10
 ### Changed
 - Updated the bundled zwasm C API to 2.10.0. The headers did not change, and Zig stays at 0.17.0. `Module::imports` lists a memory64 import whose minimum does not fit `u32`, where 2.9.0 failed the whole list (zwasm/zwasm#670). A table another instance exported can be imported: zwasm now stops it growing on both sides, as it does a host-made one, so the refusal 0.5.0 added is gone (zwasm/zwasm#449). On the interpreter, an element segment whose table64 offset lies past the table is refused instead of stopping the host process (GHSA-ph9p-gw3q-7chp)
