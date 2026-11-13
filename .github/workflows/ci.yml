@@ -154,7 +154,7 @@ jobs:
           cargo build
 
       # zwasm-sdk is deliberately not packaged here. Packaging it resolves
-      # `zwasm-sys = "^0.6.0"` against crates.io, which cannot succeed until
+      # `zwasm-sys = "^0.7.0"` against crates.io, which cannot succeed until
       # that version is published — and `--no-verify` does not help, because
       # the resolution happens while preparing the package rather than while
       # verifying it. Nothing is lost: zwasm-sdk carries no submodule and no
@@ -196,7 +196,7 @@ jobs:
           version: 0.17.0
 
       - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-zigbuild
 
