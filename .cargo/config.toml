@@ -1,0 +1,13 @@
+# Keeps the resolver off a version published in the last 7 days, which gives a
+# compromised release time to be noticed and yanked. Needs cargo 1.100.0;
+# older ones ignore the key.
+#
+# It applies when a version is chosen. Cargo.lock is not committed, so CI
+# chooses on every run; a working tree that already has a Cargo.lock keeps
+# what is in it until `cargo update`.
+#
+# `cargo publish -p zwasm-sdk` right after zwasm-sys is the one place this
+# gets in the way, because the sibling it resolves is minutes old. Run that
+# one command with CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow.
+[registry]
+global-min-publish-age = "7 days"
