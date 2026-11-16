@@ -8,7 +8,7 @@ A recent stable Rust compiler is recommended. (Rust 2021 edition)
 
 ## Build and Platform Requirements
 
-- Requires [Zig](https://ziglang.org/) 0.17.0 in your PATH (used to build the zwasm C library). Exactly that minor: zwasm pins one Zig version, and an older Zig fails inside its `build.zig` rather than with a version message
+- Requires [Zig](https://ziglang.org/) 0.17.1 in your PATH (used to build the zwasm C library). zwasm pins one Zig version, and a Zig from an older minor fails inside its `build.zig` rather than with a version message
 - Supported platforms: **Linux (x86_64, aarch64), macOS (x86_64, aarch64)**
 
 The zwasm C library is built from the vendored submodule and linked statically, so no shared library has to be installed on the machine that runs your binary.

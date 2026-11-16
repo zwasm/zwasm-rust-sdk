@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Changed
+- Updated the bundled zwasm C API to 2.12.0. The headers did not change. zwasm is now built and tested with Zig 0.17.1, and so is this crate; 0.17.0 still builds it
+### Security
+- A guest given a directory through `WasiConfig::preopen_dir` stays beneath it. Before, a guest could read and write files outside the directory through a symlink it made inside, with the host process's permissions, and 0.7.0 has no setting that prevents it (GHSA-vh35-jrc2-qj4q). A path that leaves the preopen now fails with `notcapable`, and that includes one through a symlink the host put there on purpose
+- zwasm's validator rejects a module whose GC constant expression, element segment item or reference operand has the wrong type. Before, such a module could read or write at an address it chose on the JIT, or stop the host process (GHSA-rg2g-8x8j-3pm9, GHSA-fv27-pjx7-p4m3). On 0.7.0 the way around it is to validate the module with another validator first, such as `wasm-tools validate --features all`
+- On the JIT, a `try_table` catch clause whose label is a `loop` branches to the loop's header. Before, it landed after the loop, so a valid module returned a wrong value or stopped the host process (GHSA-3983-xv7h-r8vx). On 0.7.0 the way around it is `EngineKind::Interp`
+
 ## [0.7.0] - 2026-11-13
 ### Changed
 - Updated the bundled zwasm C API to 2.11.1. The headers did not change, and Zig stays at 0.17.0. On the JIT, a reference a block carries out through `br_on_null`, `br_on_non_null`, `br_on_cast` or `br_on_cast_fail` keeps its register until it is used; before, a module could make the JIT read or write outside the GC heap, and `Instance::new` runs a module on the JIT by default (GHSA-4p74-j99r-p339). On 0.6.0 the way around it is `EngineKind::Interp`. On the interpreter, a call chain deeper than 256 no longer traps `call stack exhausted` while the host stack has room (zwasm/zwasm#638). 2.11.1 is 2.11.0 plus one build fix: 2.11.0 did not build from a tree without zwasm's `test/`, which is the tree `zwasm-sys` ships (zwasm/zwasm#724)
