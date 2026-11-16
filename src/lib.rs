@@ -146,7 +146,7 @@
 //!
 //! ## Build requirements
 //!
-//! [Zig](https://ziglang.org/) 0.17.0 must be on `PATH`. The zwasm C library is
+//! [Zig](https://ziglang.org/) 0.17.1 must be on `PATH`. The zwasm C library is
 //! built from the vendored submodule and linked statically, so nothing has to be
 //! installed on the target machine.
 
