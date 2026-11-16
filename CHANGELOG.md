@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.8.0] - 2026-11-17
 ### Changed
 - Updated the bundled zwasm C API to 2.12.0. The headers did not change. zwasm is now built and tested with Zig 0.17.1, and so is this crate; 0.17.0 still builds it
 ### Security
