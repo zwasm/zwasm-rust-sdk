@@ -32,13 +32,14 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zwasm-sys = "0.7"
+zwasm-sys = "0.8"
 ```
 
 ## Version Compatibility
 
 | zwasm-sys | zwasm C API |
 |-----------|-------------|
+| 0.8.x     | 2.12.x      |
 | 0.7.x     | 2.11.x      |
 | 0.6.x     | 2.10.x      |
 | 0.5.x     | 2.9.x       |
@@ -81,12 +82,12 @@ unsafe {
 
 ## API Reference
 
-- [zwasm C API Documentation](https://github.com/zwasm/zwasm/blob/v2.11.1/docs/reference/c_api.md)
+- [zwasm C API Documentation](https://github.com/zwasm/zwasm/blob/v2.12.0/docs/reference/c_api.md)
 
 ## License
 
 - **Rust code in this repository (including zwasm-sys):** MIT License
-- **zwasm C API (submodule):** See [zwasm LICENSE](https://github.com/zwasm/zwasm/blob/v2.11.1/LICENSE) for details. You must comply with the license of the zwasm C library in addition to the MIT License for Rust code.
+- **zwasm C API (submodule):** See [zwasm LICENSE](https://github.com/zwasm/zwasm/blob/v2.12.0/LICENSE) for details. You must comply with the license of the zwasm C library in addition to the MIT License for Rust code.
 
 ## Contributing & Issue Reporting
 
