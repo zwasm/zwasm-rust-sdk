@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.8.1] - 2026-11-21
 ### Changed
 - Updated the bundled zwasm C API to 2.12.1, a security release. The headers and the Zig version did not change
 - The JIT declines some modules it compiled before: one that uses `array.new` on an array of `v128` elements; and on arm64, one with a function in which a branch or a literal load cannot reach its target, which takes more than about 1 MiB of machine code, or with an entry wrapper more than 128 MiB from its function. `EngineKind::Jit` fails on such a module. `EngineKind::Auto` runs it on the interpreter, which `Instance::engine` reports, unless the interpreter cannot run it either: it does not run `v128.const`, for one, and then `Auto` fails as well

@@ -82,12 +82,12 @@ unsafe {
 
 ## API Reference
 
-- [zwasm C API Documentation](https://github.com/zwasm/zwasm/blob/v2.12.0/docs/reference/c_api.md)
+- [zwasm C API Documentation](https://github.com/zwasm/zwasm/blob/v2.12.1/docs/reference/c_api.md)
 
 ## License
 
 - **Rust code in this repository (including zwasm-sys):** MIT License
-- **zwasm C API (submodule):** See [zwasm LICENSE](https://github.com/zwasm/zwasm/blob/v2.12.0/LICENSE) for details. You must comply with the license of the zwasm C library in addition to the MIT License for Rust code.
+- **zwasm C API (submodule):** See [zwasm LICENSE](https://github.com/zwasm/zwasm/blob/v2.12.1/LICENSE) for details. You must comply with the license of the zwasm C library in addition to the MIT License for Rust code.
 
 ## Contributing & Issue Reporting
 

@@ -118,7 +118,7 @@ For low-level access, see [zwasm-sys](crates/zwasm-sys).
 ## API Reference
 
 - [API documentation on docs.rs](https://docs.rs/zwasm-sdk)
-- [zwasm C API documentation](https://github.com/zwasm/zwasm/blob/v2.12.0/docs/reference/c_api.md)
+- [zwasm C API documentation](https://github.com/zwasm/zwasm/blob/v2.12.1/docs/reference/c_api.md)
 
 ## License
 
