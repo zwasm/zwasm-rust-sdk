@@ -1,4 +1,4 @@
-//! The two engines have to agree on what a module computes.
+//! What a module computes must not depend on the engine that runs it.
 //!
 //! One shape is kept here, the one zwasm 2.12.1 was released for: an `if`
 //! whose then arm ends in `unreachable`, so only the else arm reaches the
@@ -25,13 +25,20 @@ const WASM: &[u8] = &[
     0x07, 0x0b, 0x6b, 0x0b,
 ];
 
-/// Calls `else_arm(arg)` on `kind`, having checked that `kind` is what ran.
-fn else_arm(kind: EngineKind, arg: i32) -> i32 {
+/// Calls `else_arm(arg)` on an instance from `Instance::new` (`None`) or on one
+/// forced onto `kind`, having checked that a forced kind is what ran.
+fn else_arm(kind: Option<EngineKind>, arg: i32) -> i32 {
     let engine = Engine::new().unwrap();
     let mut store = Store::new(&engine).unwrap();
     let module = Module::new(&mut store, WASM).unwrap();
-    let instance = Instance::new_with_engine(&mut store, &module, &[], kind).unwrap();
-    assert_eq!(instance.engine(&store), kind);
+    let instance = match kind {
+        Some(kind) => {
+            let instance = Instance::new_with_engine(&mut store, &module, &[], kind).unwrap();
+            assert_eq!(instance.engine(&store), kind);
+            instance
+        }
+        None => Instance::new(&mut store, &module, &[]).unwrap(),
+    };
     let func = instance.get_func(&mut store, "else_arm").unwrap();
     let mut results = [Val::I32(0)];
     func.call(&mut store, &[Val::I32(arg)], &mut results)
@@ -44,7 +51,9 @@ fn else_arm(kind: EngineKind, arg: i32) -> i32 {
 
 #[test]
 fn an_if_whose_then_arm_traps_takes_its_result_from_the_else_arm() {
-    for kind in [EngineKind::Jit, EngineKind::Interp] {
+    // `None` is `Instance::new`, the path the advisory names. Whichever engine
+    // the default resolves to, the value is the one the module's text gives.
+    for kind in [None, Some(EngineKind::Jit), Some(EngineKind::Interp)] {
         assert_eq!(else_arm(kind, 0), 5 - 7, "on {kind:?}");
     }
 }
