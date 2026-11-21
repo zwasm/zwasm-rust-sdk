@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Changed
+- Updated the bundled zwasm C API to 2.12.1, a security release. The headers and the Zig version did not change. On arm64, a module with a function of more than about 1 MiB of machine code now runs on the interpreter under `EngineKind::Auto`; `Instance::engine` reports it
+### Security
+- Seven advisories are fixed, all in the JIT, which `Instance::new` uses by default. A valid module could take an `if`'s result from a value below it when the then arm ends in a terminator (GHSA-grpg-98rp-93g7, high), or lose a value at a merge to another one moved over it (GHSA-4wxj-2fwr-xxwq). It could stop the host process while `Instance::new` compiled it (GHSA-pxpg-mx84-x9c9), catch a `throw_ref` of a null reference that has to trap (GHSA-wwr2-84fx-2j37), or run on with a null reference after a GC allocation past the heap's cap, which now traps `TrapKind::OutOfMemory` (GHSA-pjxf-4q9v-jpwq). Two are arm64 only (GHSA-9v38-4fvh-wjp6, GHSA-493c-fvh2-2pv7). On 0.8.0 the way around all seven is `EngineKind::Interp`
+
 ## [0.8.0] - 2026-11-17
 ### Changed
 - Updated the bundled zwasm C API to 2.12.0. The headers did not change. zwasm is now built and tested with Zig 0.17.1, and so is this crate; 0.17.0 still builds it
